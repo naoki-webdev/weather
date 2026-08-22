@@ -1,6 +1,15 @@
-import { SessionController } from "./session.controller";
+import { ArgumentMetadata, ValidationPipe } from "@nestjs/common";
+
+import { CreateSessionDto, SessionController } from "./session.controller";
 
 describe("SessionController", () => {
+  it("rejects a missing session wrapper before the controller accesses it", async () => {
+    const pipe = new ValidationPipe({ transform: true, whitelist: true });
+    const metadata: ArgumentMetadata = { type: "body", metatype: CreateSessionDto };
+
+    await expect(pipe.transform({}, metadata)).rejects.toThrow();
+  });
+
   it("revokes the authenticated token on logout", async () => {
     const authService = { revokeToken: jest.fn().mockResolvedValue(undefined) };
     const controller = new SessionController(authService as never);

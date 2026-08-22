@@ -38,14 +38,18 @@ export class WeatherClient {
     return Array.isArray(payload.results)
       ? payload.results.flatMap((result: Record<string, unknown>) => {
         if (!result || typeof result !== "object") return [];
+        const latitude = Number(result.latitude);
+        const longitude = Number(result.longitude);
+        if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return [];
+
         return [{
           external_id: String(result.id ?? ""),
           name: String(result.name ?? ""),
           country: String(result.country ?? ""),
           country_code: String(result.country_code ?? ""),
           admin1: String(result.admin1 ?? ""),
-          latitude: Number(result.latitude ?? 0),
-          longitude: Number(result.longitude ?? 0),
+          latitude,
+          longitude,
           timezone: String(result.timezone ?? ""),
           source_name: "Open-Meteo",
         }];
@@ -153,7 +157,11 @@ export class WeatherClient {
     if (!response.ok) throw new OpenMeteoRequestError(`Open-Meteo returned HTTP ${response.status}`);
 
     try {
-      return await response.json() as Record<string, unknown>;
+      const payload: unknown = await response.json();
+      if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+        throw new Error("response was not an object");
+      }
+      return payload as Record<string, unknown>;
     } catch (error) {
       throw new OpenMeteoRequestError(`Open-Meteo returned invalid JSON: ${error instanceof Error ? error.message : String(error)}`);
     }
@@ -161,7 +169,8 @@ export class WeatherClient {
 
   private numberOrNull(values: unknown, index: number) {
     if (!Array.isArray(values) || values[index] === null || values[index] === undefined) return null;
-    return Number(values[index]);
+    const value = Number(values[index]);
+    return Number.isFinite(value) ? value : null;
   }
 
   private utcTimestamp(time: string) {

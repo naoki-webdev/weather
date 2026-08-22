@@ -25,16 +25,18 @@ export class WeatherPreferenceService {
   }
 
   async updatePreference(userId: bigint, values: Record<string, number>) {
-    const preference = await this.prisma.weatherPreference.upsert({
-      where: { userId },
-      update: values,
-      create: { userId, ...DEFAULT_PREFERENCE, ...values },
+    return this.prisma.$transaction(async (database) => {
+      const preference = await database.weatherPreference.upsert({
+        where: { userId },
+        update: values,
+        create: { userId, ...DEFAULT_PREFERENCE, ...values },
+      });
+      await this.logActivity(userId, "weather_preference.update", "WeatherPreference", preference.id, {}, database);
+      return preference;
     });
-    await this.logActivity(userId, "weather_preference.update", "WeatherPreference", preference.id, {});
-    return preference;
   }
 
-  private async logActivity(userId: bigint, action: string, resourceType: string, resourceId: bigint, metadata: Prisma.InputJsonValue) {
-    await this.prisma.activityLog.create({ data: { userId, action, resourceType, resourceId, metadata } });
+  private async logActivity(userId: bigint, action: string, resourceType: string, resourceId: bigint, metadata: Prisma.InputJsonValue, database: Pick<PrismaService, "activityLog"> = this.prisma) {
+    await database.activityLog.create({ data: { userId, action, resourceType, resourceId, metadata } });
   }
 }

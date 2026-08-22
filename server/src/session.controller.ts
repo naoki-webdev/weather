@@ -1,5 +1,5 @@
 import { Body, Controller, Delete, Get, HttpCode, HttpException, HttpStatus, Post, Req, Res, UseGuards } from "@nestjs/common";
-import { IsEmail, IsString, MinLength, ValidateNested } from "class-validator";
+import { IsDefined, IsEmail, IsString, MinLength, ValidateNested } from "class-validator";
 import { Type } from "class-transformer";
 import type { Response } from "express";
 import { Throttle } from "@nestjs/throttler";
@@ -18,7 +18,8 @@ class SessionInput {
   password!: string;
 }
 
-class CreateSessionDto {
+export class CreateSessionDto {
+  @IsDefined()
   @ValidateNested()
   @Type(() => SessionInput)
   session!: SessionInput;

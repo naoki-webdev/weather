@@ -52,4 +52,26 @@ describe("WeatherClient hourly forecast", () => {
       .rejects
       .toBeInstanceOf(ForecastOutOfRangeError);
   });
+
+  it("turns non-finite hourly values into unavailable values", async () => {
+    jest.spyOn(global, "fetch").mockResolvedValue({
+      ok: true,
+      json: async () => ({ hourly: { ...hourlyPayload.hourly, temperature_2m: ["not-a-number", 25] } }),
+    } as Response);
+
+    const result = await new WeatherClient().hourlyWeatherFor(city, new Date("2026-08-20T00:00:00Z"));
+
+    expect(result?.temperature).toBeNull();
+  });
+
+  it("rejects a non-object external JSON response", async () => {
+    jest.spyOn(global, "fetch").mockResolvedValue({
+      ok: true,
+      json: async () => [],
+    } as Response);
+
+    await expect(new WeatherClient().hourlyWeatherFor(city, new Date("2026-08-20T00:00:00Z")))
+      .rejects
+      .toThrow("invalid JSON");
+  });
 });

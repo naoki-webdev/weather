@@ -100,6 +100,7 @@ export class CitiesController {
   }
 
   @Post()
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   async create(@Req() request: AuthenticatedRequest, @Body() body: CreateCityDto) {
     try {
       const result = await this.citiesService.upsert(request.user.id, body.city);
@@ -119,6 +120,7 @@ export class CitiesController {
   }
 
   @Post(":id/sync")
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   async sync(@Req() request: AuthenticatedRequest, @Param("id") id: string) {
     try {
       const city = await this.citiesService.sync(request.user.id, this.parseId(id));

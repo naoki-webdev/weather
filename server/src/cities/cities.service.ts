@@ -20,6 +20,8 @@ type CityInput = {
   source_name: string;
 };
 
+type ActivityLogRepository = Pick<PrismaService, "activityLog">;
+
 @Injectable()
 export class CitiesService {
   constructor(
@@ -53,11 +55,15 @@ export class CitiesService {
       sourceName: input.source_name,
     };
     const existing = await this.prisma.city.findUnique({ where: { userId_externalId: { userId, externalId: input.external_id } } });
-    const city = await this.prisma.city.upsert({
-      where: { userId_externalId: { userId, externalId: input.external_id } },
-      create: { userId, externalId: input.external_id, ...data },
-      update: data,
-      include: LATEST_CITY_INCLUDE,
+    const city = await this.prisma.$transaction(async (database) => {
+      const upserted = await database.city.upsert({
+        where: { userId_externalId: { userId, externalId: input.external_id } },
+        create: { userId, externalId: input.external_id, ...data },
+        update: data,
+        include: LATEST_CITY_INCLUDE,
+      });
+      await this.logActivity(userId, existing ? "city.update" : "city.create", "City", upserted.id, { name: upserted.name }, database);
+      return upserted;
     });
     let syncError: string | null = null;
     try {
@@ -67,7 +73,6 @@ export class CitiesService {
       syncError = error.message;
     }
 
-    await this.logActivity(userId, existing ? "city.update" : "city.create", "City", city.id, { name: city.name });
     const updated = await this.prisma.city.findUniqueOrThrow({ where: { id: city.id }, include: LATEST_CITY_INCLUDE });
     const [updatedWithHistory] = await this.citiesQueryService.withHistory([updated]);
     return { city: serializeCity(updatedWithHistory, await this.weatherPreferenceService.preferenceFor(userId), true), syncError };
@@ -76,8 +81,10 @@ export class CitiesService {
   async remove(userId: bigint, cityId: bigint) {
     const city = await this.prisma.city.findFirst({ where: { id: cityId, userId } });
     if (!city) return false;
-    await this.logActivity(userId, "city.destroy", "City", city.id, { name: city.name });
-    await this.prisma.city.delete({ where: { id: city.id } });
+    await this.prisma.$transaction(async (database) => {
+      await database.city.delete({ where: { id: city.id } });
+      await this.logActivity(userId, "city.destroy", "City", city.id, { name: city.name }, database);
+    });
     return true;
   }
 
@@ -91,12 +98,15 @@ export class CitiesService {
   async favorite(userId: bigint, cityId: bigint, favorite: boolean) {
     const city = await this.prisma.city.findFirst({ where: { id: cityId, userId }, include: LATEST_CITY_INCLUDE });
     if (!city) return null;
-    const updated = await this.prisma.city.update({ where: { id: city.id }, data: { favorite }, include: LATEST_CITY_INCLUDE });
-    await this.logActivity(userId, "city.favorite", "City", city.id, { favorite });
+    const updated = await this.prisma.$transaction(async (database) => {
+      const updatedCity = await database.city.update({ where: { id: city.id }, data: { favorite }, include: LATEST_CITY_INCLUDE });
+      await this.logActivity(userId, "city.favorite", "City", city.id, { favorite }, database);
+      return updatedCity;
+    });
     return serializeCity(updated, await this.weatherPreferenceService.preferenceFor(userId));
   }
 
-  private async logActivity(userId: bigint, action: string, resourceType: string, resourceId: bigint, metadata: Prisma.InputJsonValue) {
-    await this.prisma.activityLog.create({ data: { userId, action, resourceType, resourceId, metadata } });
+  private async logActivity(userId: bigint, action: string, resourceType: string, resourceId: bigint, metadata: Prisma.InputJsonValue, database: ActivityLogRepository = this.prisma) {
+    await database.activityLog.create({ data: { userId, action, resourceType, resourceId, metadata } });
   }
 }
