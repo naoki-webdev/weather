@@ -1,0 +1,39 @@
+{
+  "name": "weather-compare-dashboard-frontend",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && node scripts/clean-vite-output.mjs && vite build",
+    "lint": "tsc -b --pretty false",
+    "preview": "vite preview",
+    "test:frontend": "vitest run",
+    "test:e2e": "node scripts/run-e2e.mjs"
+  },
+  "dependencies": {
+    "@emotion/react": "^11.14.0",
+    "@emotion/styled": "^11.14.0",
+    "@mui/material": "^7.1.1",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "yaml": "^2.8.3"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.59.1",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/node": "^20.19.39",
+    "@types/react": "^19.1.2",
+    "@types/react-dom": "^19.1.2",
+    "@vitejs/plugin-react": "4.3.4",
+    "jsdom": "^29.0.2",
+    "typescript": "^5.8.3",
+    "vite": "6.4.3",
+    "vitest": "3.2.7"
+  }
+}

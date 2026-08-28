@@ -1,0 +1,132 @@
+name: weather-compare-api
+
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: weather_compare_development
+    ports:
+      - "55432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d weather_compare_development"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  web:
+    build: .
+    command: sh -lc "cd /app/server && if [ ! -x node_modules/.bin/nest ] || [ ! -d node_modules/@nestjs/throttler ]; then npm ci; fi && npx prisma generate && npm run start:dev"
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/weather_compare_development
+      PORT: 3000
+      FRONTEND_ORIGIN: http://localhost:5175
+      TRUST_PROXY_HOPS: ${TRUST_PROXY_HOPS:-0}
+      RUN_DB_SEED_IF_EMPTY: "true"
+      DEMO_USER_EMAIL: ${DEMO_USER_EMAIL:-demo@example.com}
+      DEMO_USER_PASSWORD: ${DEMO_USER_PASSWORD:-password}
+      JWT_SECRET: ${JWT_SECRET}
+    ports:
+      - "3201:3000"
+    volumes:
+      - ./server/src:/app/server/src
+      - ./server/prisma:/app/server/prisma
+      - ./server/tsconfig.json:/app/server/tsconfig.json
+      - ./server/nest-cli.json:/app/server/nest-cli.json
+      - ./server/jest.config.js:/app/server/jest.config.js
+      - server_node_modules:/app/server/node_modules
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend:
+    image: node:20-bookworm-slim
+    working_dir: /app
+    command: sh -lc "if [ ! -x node_modules/.bin/vite ]; then npm ci; fi; npm run dev -- --host 0.0.0.0 --port 5173 --strictPort"
+    environment:
+      VITE_API_BASE_URL: http://localhost:3201
+      VITE_DEMO_EMAIL: ${VITE_DEMO_EMAIL:-demo@example.com}
+      VITE_DEMO_PASSWORD: ${VITE_DEMO_PASSWORD:-password}
+    ports:
+      - "5175:5173"
+    volumes:
+      - .:/app
+      - node_modules:/app/node_modules
+    depends_on:
+      - web
+
+  e2e_web:
+    build: .
+    command: sh -lc "cd /app/server && if [ ! -x node_modules/.bin/nest ] || [ ! -d node_modules/@nestjs/throttler ]; then npm ci; fi && npx prisma generate && npm run start:dev"
+    environment:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/weather_compare_test
+      PORT: 3000
+      FRONTEND_ORIGIN: http://localhost:3210
+      TRUST_PROXY_HOPS: 0
+      RUN_DB_SEED_IF_EMPTY: "true"
+      DEMO_USER_EMAIL: demo@example.com
+      DEMO_USER_PASSWORD: password
+      JWT_SECRET: test-weather-compare-secret
+      OSRM_BASE_URL: http://e2e_stub:8080/osrm
+      OPEN_METEO_GEOCODING_ENDPOINT: http://e2e_stub:8080/open-meteo/v1/search
+      OPEN_METEO_FORECAST_ENDPOINT: http://e2e_stub:8080/open-meteo/v1/forecast
+      OPEN_METEO_AIR_QUALITY_ENDPOINT: http://e2e_stub:8080/open-meteo/v1/air-quality
+    ports:
+      - "3210:3000"
+    volumes:
+      - ./server/src:/app/server/src
+      - ./server/prisma:/app/server/prisma
+      - ./server/tsconfig.json:/app/server/tsconfig.json
+      - ./server/nest-cli.json:/app/server/nest-cli.json
+      - ./server/jest.config.js:/app/server/jest.config.js
+      - server_node_modules:/app/server/node_modules
+    depends_on:
+      db:
+        condition: service_healthy
+      e2e_stub:
+        condition: service_healthy
+
+  e2e_stub:
+    image: node:20-bookworm-slim
+    working_dir: /app
+    command: node e2e/stubs/external-api.mjs
+    environment:
+      PORT: 8080
+    expose:
+      - "8080"
+    volumes:
+      - .:/app:ro
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/health').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+  playwright:
+    image: mcr.microsoft.com/playwright:v1.59.1-noble
+    working_dir: /app
+    environment:
+      PLAYWRIGHT_SKIP_DOCKER: "1"
+      PLAYWRIGHT_BASE_URL: http://e2e_web:3000
+      VITE_API_BASE_URL: http://e2e_web:3000
+      VITE_DEMO_EMAIL: ${VITE_DEMO_EMAIL:-demo@example.com}
+      VITE_DEMO_PASSWORD: ${VITE_DEMO_PASSWORD:-password}
+    volumes:
+      - .:/app
+      - node_modules:/app/node_modules
+    depends_on:
+      - e2e_web
+
+volumes:
+  postgres_data:
+    name: weather-compare-api_postgres_data
+  node_modules:
+    name: weather-compare-api_node_modules
+  server_node_modules:
+    name: weather-compare-api_server_node_modules

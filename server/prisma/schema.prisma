@@ -1,0 +1,125 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                BigInt            @id @default(autoincrement()) @db.BigInt
+  name              String
+  email             String            @unique
+  passwordDigest     String            @map("password_digest")
+  readOnly          Boolean           @default(false) @map("read_only")
+  createdAt         DateTime          @default(now()) @db.Timestamp(6) @map("created_at")
+  updatedAt         DateTime          @default(now()) @updatedAt @db.Timestamp(6) @map("updated_at")
+  cities            City[]
+  activityLogs      ActivityLog[]
+  authSessions      AuthSession[]
+  weatherPreference WeatherPreference?
+
+  @@map("users")
+}
+
+model AuthSession {
+  id        BigInt    @id @default(autoincrement()) @db.BigInt
+  userId    BigInt    @db.BigInt @map("user_id")
+  jti       String    @unique
+  expiresAt DateTime  @db.Timestamp(6) @map("expires_at")
+  revokedAt DateTime? @db.Timestamp(6) @map("revoked_at")
+  createdAt DateTime  @default(now()) @db.Timestamp(6) @map("created_at")
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, revokedAt])
+  @@index([expiresAt])
+  @@map("auth_sessions")
+}
+
+model WeatherSyncLock {
+  name       String   @id @db.VarChar(64)
+  owner      String   @db.VarChar(36)
+  lockedUntil DateTime @db.Timestamp(6) @map("locked_until")
+  createdAt  DateTime @default(now()) @db.Timestamp(6) @map("created_at")
+  updatedAt  DateTime @default(now()) @updatedAt @db.Timestamp(6) @map("updated_at")
+
+  @@map("weather_sync_locks")
+}
+
+model City {
+  id               BigInt            @id @default(autoincrement()) @db.BigInt
+  userId           BigInt            @db.BigInt @map("user_id")
+  name             String
+  country          String            @default("")
+  countryCode      String            @default("") @map("country_code")
+  admin1           String            @default("")
+  latitude         Decimal           @db.Decimal(9, 6)
+  longitude        Decimal           @db.Decimal(9, 6)
+  timezone         String            @default("UTC")
+  externalId       String            @map("external_id")
+  sourceName       String            @default("Open-Meteo") @map("source_name")
+  favorite         Boolean           @default(false)
+  createdAt        DateTime          @default(now()) @db.Timestamp(6) @map("created_at")
+  updatedAt        DateTime          @default(now()) @updatedAt @db.Timestamp(6) @map("updated_at")
+  user             User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  weatherSnapshots WeatherSnapshot[]
+
+  @@unique([userId, externalId])
+  @@index([userId, favorite])
+  @@index([userId, name])
+  @@map("cities")
+}
+
+model WeatherSnapshot {
+  id                    BigInt   @id @default(autoincrement()) @db.BigInt
+  cityId                BigInt   @db.BigInt @map("city_id")
+  fetchedAt             DateTime @db.Timestamp(6) @map("fetched_at")
+  currentTemperature    Decimal? @map("current_temperature") @db.Decimal(5, 2)
+  currentHumidity       Int?     @map("current_humidity")
+  currentPrecipitation  Decimal? @map("current_precipitation") @db.Decimal(6, 2)
+  currentWindSpeed      Decimal? @map("current_wind_speed") @db.Decimal(6, 2)
+  currentWeatherCode    Int?     @map("current_weather_code")
+  currentUsAqi          Decimal? @map("current_us_aqi") @db.Decimal(6, 2)
+  currentPm25           Decimal? @map("current_pm2_5") @db.Decimal(7, 2)
+  currentPm10           Decimal? @map("current_pm10") @db.Decimal(7, 2)
+  dailyData             Json     @default("{}") @map("daily_data")
+  sourceName            String   @default("Open-Meteo") @map("source_name")
+  createdAt             DateTime @default(now()) @db.Timestamp(6) @map("created_at")
+  updatedAt             DateTime @default(now()) @updatedAt @db.Timestamp(6) @map("updated_at")
+  city                  City     @relation(fields: [cityId], references: [id], onDelete: Cascade)
+
+  @@index([cityId, fetchedAt])
+  @@map("weather_snapshots")
+}
+
+model WeatherPreference {
+  id                  BigInt   @id @default(autoincrement()) @db.BigInt
+  userId              BigInt   @unique @db.BigInt @map("user_id")
+  targetTemperature   Decimal  @default(21) @map("target_temperature") @db.Decimal(5, 2)
+  temperatureWeight   Int      @default(5) @map("temperature_weight")
+  precipitationWeight Int      @default(4) @map("precipitation_weight")
+  humidityWeight      Int      @default(2) @map("humidity_weight")
+  windWeight          Int      @default(2) @map("wind_weight")
+  airQualityWeight    Int      @default(3) @map("air_quality_weight")
+  createdAt           DateTime @default(now()) @db.Timestamp(6) @map("created_at")
+  updatedAt           DateTime @default(now()) @updatedAt @db.Timestamp(6) @map("updated_at")
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("weather_preferences")
+}
+
+model ActivityLog {
+  id           BigInt   @id @default(autoincrement()) @db.BigInt
+  userId       BigInt   @db.BigInt @map("user_id")
+  action       String
+  resourceType String   @map("resource_type")
+  resourceId   BigInt?  @db.BigInt @map("resource_id")
+  metadata     Json     @default("{}")
+  createdAt    DateTime @default(now()) @db.Timestamp(6) @map("created_at")
+  updatedAt    DateTime @default(now()) @updatedAt @db.Timestamp(6) @map("updated_at")
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@map("activity_logs")
+}

@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Weather Compare">
+  <defs>
+    <linearGradient id="sky" x1="8" y1="8" x2="56" y2="56" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#2b8fc4"/>
+      <stop offset="1" stop-color="#124b88"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="18" fill="url(#sky)"/>
+  <circle cx="39" cy="24" r="10" fill="#ffd166"/>
+  <g stroke="#ffd166" stroke-width="3" stroke-linecap="round">
+    <path d="M39 8v5M39 35v5M23 24h5M50 24h5M28 13l4 4M46 31l4 4M50 13l-4 4M32 31l-4 4"/>
+  </g>
+  <path d="M16 45c0-6 4.8-10.5 10.7-10.5 2 0 3.9.5 5.5 1.5A12 12 0 0 1 43 30c6.6 0 12 5.3 12 11.8 0 .4 0 .8-.1 1.2H16.4c-.3-.9-.4-1.9-.4-3Z" fill="#fff"/>
+</svg>

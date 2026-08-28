@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+docker compose exec -T web sh -lc 'cd /app/server && npm run lint'
+docker compose exec -T web sh -lc 'cd /app/server && npm test -- --runInBand'
+docker compose exec -T web sh -lc 'cd /app/server && npm run build'
+docker compose run --rm frontend sh -lc "npm ci && npm run lint && npm run test:frontend && npm run build"
