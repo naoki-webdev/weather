@@ -10,7 +10,7 @@ import { ReadOnlyGuard } from "../auth/readonly.guard";
 import { CitiesCsvService } from "./cities-csv.service";
 import { CitiesQueryService } from "./cities.query.service";
 import { CitiesService } from "./cities.service";
-import { CityComparisonInputError, CityComparisonNotFoundError } from "./cities.errors";
+import { CityComparisonInputError, CityComparisonNotFoundError, CityQueryInputError } from "./cities.errors";
 import { OpenMeteoRequestError } from "../weather/weather.client";
 
 export class CityInputDto {
@@ -54,8 +54,13 @@ export class CitiesController {
   ) {}
 
   @Get()
-  index(@Req() request: AuthenticatedRequest, @Query() query: Record<string, string | undefined>) {
-    return this.citiesQueryService.list(request.user.id, query);
+  async index(@Req() request: AuthenticatedRequest, @Query() query: Record<string, string | undefined>) {
+    try {
+      return await this.citiesQueryService.list(request.user.id, query);
+    } catch (error) {
+      if (error instanceof CityQueryInputError) throw new HttpException({ errors: [error.message] }, HttpStatus.BAD_REQUEST);
+      throw error;
+    }
   }
 
   @Get("search")

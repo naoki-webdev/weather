@@ -1,7 +1,7 @@
 import type { City } from "@prisma/client";
 
 import { PrismaService } from "../prisma.service";
-import { WeatherClient } from "../weather/weather.client";
+import { ForecastOutOfRangeError, WeatherClient } from "../weather/weather.client";
 import { RouteClient } from "./route.client";
 import { TravelService } from "./travel.service";
 import { parseTravelDateTime } from "./timezone";
@@ -109,5 +109,28 @@ describe("TravelService", () => {
     expect(result?.recommended).toBeNull();
     expect(result?.reason).toBe("この時間帯の到着時予報を取得できませんでした。");
     expect(result?.candidates.every((candidate) => candidate.weather_score === null)).toBe(true);
+  });
+
+  it("skips candidates outside the forecast range while keeping valid candidates", async () => {
+    const fromId = 1n;
+    const toId = 2n;
+    const cities = [
+      { id: fromId, name: "東京", timezone: "Asia/Tokyo" },
+      { id: toId, name: "横浜", timezone: "Asia/Tokyo" },
+    ] as Array<Pick<City, "id" | "name" | "timezone">>;
+    const prisma = { city: { findMany: jest.fn().mockResolvedValue(cities) } } as unknown as PrismaService;
+    const routeClient = { routeFor: jest.fn().mockResolvedValue({ durationSeconds: 42 * 60, distanceMeters: 45000 }) } as unknown as RouteClient;
+    const weatherClient = {
+      hourlyWeatherFor: jest.fn().mockImplementation(async (_city: City, arrivalAt: Date) => {
+        if (arrivalAt.getUTCMinutes() === 42) throw new ForecastOutOfRangeError("outside forecast");
+        return { precipitation_probability: 20 };
+      }),
+    } as unknown as WeatherClient;
+    const service = new TravelService(prisma, routeClient, weatherClient);
+
+    const result = await service.bestDeparture(99n, fromId, toId, new Date("2026-08-20T08:00:00.000Z"), new Date("2026-08-20T08:30:00.000Z"), 15);
+
+    expect(result?.candidates[0]?.weather_score).toBeNull();
+    expect(result?.recommended?.departure_at).toBe("2026-08-20T08:15:00.000Z");
   });
 });

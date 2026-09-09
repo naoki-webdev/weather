@@ -1,7 +1,7 @@
 import { Injectable } from "@nestjs/common";
 
 import { PrismaService } from "../prisma.service";
-import { WeatherClient } from "../weather/weather.client";
+import { ForecastOutOfRangeError, WeatherClient } from "../weather/weather.client";
 import { RouteClient } from "./route.client";
 import { TravelInputError } from "./travel.errors";
 import { parseTravelDateTime } from "./timezone";
@@ -69,7 +69,12 @@ export class TravelService {
     for (let index = 0; index < candidateCount; index += 1) {
       const departureAt = new Date(departureWindowStart.getTime() + index * intervalMinutes * 60_000);
       const arrivalAt = new Date(departureAt.getTime() + route.durationSeconds * 1000);
-      const arrivalWeather = await this.weatherClient.hourlyWeatherFor(to, arrivalAt);
+      let arrivalWeather: Awaited<ReturnType<WeatherClient["hourlyWeatherFor"]>> | null = null;
+      try {
+        arrivalWeather = await this.weatherClient.hourlyWeatherFor(to, arrivalAt);
+      } catch (error) {
+        if (!(error instanceof ForecastOutOfRangeError)) throw error;
+      }
       candidates.push({
         departure_at: departureAt.toISOString(),
         arrival_at: arrivalAt.toISOString(),
@@ -81,7 +86,7 @@ export class TravelService {
 
     const validCandidates = candidates.filter((candidate) => candidate.weather_score !== null);
     const recommended = validCandidates.reduce<typeof candidates[number] | null>((best, candidate) => !best || candidate.weather_score! > best.weather_score! ? candidate : best, null);
-    const firstCandidate = candidates[0];
+    const comparisonCandidate = validCandidates[0] ?? candidates[0];
 
     return {
       from: { id: Number(from.id), name: from.name, timezone: from.timezone },
@@ -95,7 +100,7 @@ export class TravelService {
       interval_minutes: intervalMinutes,
       recommended,
       candidates,
-      reason: recommended ? this.bestDepartureReason(firstCandidate, recommended) : "この時間帯の到着時予報を取得できませんでした。",
+      reason: recommended ? this.bestDepartureReason(comparisonCandidate, recommended) : "この時間帯の到着時予報を取得できませんでした。",
     };
   }
 

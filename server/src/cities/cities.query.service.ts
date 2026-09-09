@@ -6,7 +6,7 @@ import { serializeCity, type CityWithSnapshots } from "../weather/city-serialize
 import { historyRange, PERIOD_DAYS } from "../weather/weather-history";
 import { scoreFor } from "../weather/weather-score";
 import { WeatherPreferenceService } from "./weather-preference.service";
-import { CityComparisonInputError, CityComparisonNotFoundError } from "./cities.errors";
+import { CityComparisonInputError, CityComparisonNotFoundError, CityQueryInputError } from "./cities.errors";
 
 export const LATEST_CITY_INCLUDE = {
   weatherSnapshots: { orderBy: { fetchedAt: "desc" as const }, take: 1 },
@@ -20,9 +20,12 @@ export class CitiesQueryService {
   ) {}
 
   async list(userId: bigint, params: Record<string, string | undefined>) {
+    const page = this.parsePositiveInteger(params.page, 1, "ページ番号");
+    const perPage = Math.min(this.parsePositiveInteger(params.per_page, 20, "1ページあたりの件数"), 100);
+    if ((page - 1) > Math.floor(Number.MAX_SAFE_INTEGER / perPage)) {
+      throw new CityQueryInputError("ページ番号が大きすぎます。");
+    }
     const preference = await this.weatherPreferenceService.preferenceFor(userId);
-    const page = Math.max(Number(params.page) || 1, 1);
-    const perPage = Math.min(Math.max(Number(params.per_page) || 20, 1), 100);
     const keyword = (params.keyword ?? "").trim().toLowerCase();
     const favoriteOnly = params.favorites_only === "true";
     const where = this.cityWhere(userId, keyword, favoriteOnly);
@@ -316,5 +319,17 @@ export class CitiesQueryService {
 
   private numberOrNull(value: unknown) {
     return value === null || value === undefined ? null : Number(value);
+  }
+
+  private parsePositiveInteger(raw: string | undefined, fallback: number, label: string) {
+    const value = raw?.trim() ?? "";
+    if (value === "") return fallback;
+    if (!/^\d+$/.test(value)) throw new CityQueryInputError(`${label}は正の整数で指定してください。`);
+
+    const parsed = Number(value);
+    if (!Number.isSafeInteger(parsed) || parsed < 1) {
+      throw new CityQueryInputError(`${label}は正の整数で指定してください。`);
+    }
+    return parsed;
   }
 }

@@ -3,8 +3,17 @@ import type { WeatherPreference } from "@prisma/client";
 import type { PrismaService } from "../prisma.service";
 import { CitiesQueryService } from "./cities.query.service";
 import type { WeatherPreferenceService } from "./weather-preference.service";
+import { CityQueryInputError } from "./cities.errors";
 
 describe("CitiesQueryService", () => {
+  it("rejects non-integer pagination parameters before querying the database", async () => {
+    const preferenceFor = jest.fn();
+    const service = new CitiesQueryService({} as PrismaService, { preferenceFor } as unknown as WeatherPreferenceService);
+
+    await expect(service.list(99n, { page: "1.5" })).rejects.toBeInstanceOf(CityQueryInputError);
+    expect(preferenceFor).not.toHaveBeenCalled();
+  });
+
   it("sorts the displayed updated_at value by the latest weather snapshot", async () => {
     const preference = {
       targetTemperature: 21,

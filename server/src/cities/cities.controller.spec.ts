@@ -2,7 +2,7 @@ import { ArgumentMetadata, ValidationPipe } from "@nestjs/common";
 
 import type { AuthenticatedRequest } from "../auth/auth.types";
 import { CitiesController, CityInputDto, CreateCityDto, UpdateFavoriteDto } from "./cities.controller";
-import { CityComparisonInputError, CityComparisonNotFoundError } from "./cities.errors";
+import { CityComparisonInputError, CityComparisonNotFoundError, CityQueryInputError } from "./cities.errors";
 import { CitiesQueryService } from "./cities.query.service";
 
 describe("UpdateFavoriteDto", () => {
@@ -56,6 +56,17 @@ describe("CreateCityDto", () => {
 });
 
 describe("CitiesController", () => {
+  it("returns bad request for invalid pagination parameters", async () => {
+    const queryService = { list: jest.fn().mockRejectedValue(new CityQueryInputError("ページ番号は正の整数で指定してください。")) } as unknown as CitiesQueryService;
+    const controller = new CitiesController({} as never, queryService, {} as never);
+    const request = { user: { id: 99n } } as AuthenticatedRequest;
+
+    await expect(controller.index(request, { page: "1.5" })).rejects.toMatchObject({
+      status: 400,
+      response: { errors: ["ページ番号は正の整数で指定してください。"] },
+    });
+  });
+
   it("returns bad request for an invalid comparison size", async () => {
     const service = { compare: jest.fn().mockRejectedValue(new CityComparisonInputError("比較する都市を2～4件選択してください。")) } as unknown as CitiesQueryService;
     const controller = new CitiesController({} as never, service, {} as never);
