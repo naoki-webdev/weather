@@ -40,16 +40,20 @@ export class AuthService {
   }
 
   async revokeToken(token: string) {
+    let payload: Partial<TokenPayload>;
     try {
-      const payload = jwt.verify(token, this.secret()) as Partial<TokenPayload>;
-      if (!payload.jti) return;
-      await this.prisma.authSession.updateMany({
-        where: { jti: payload.jti, revokedAt: null },
-        data: { revokedAt: new Date() },
-      });
-    } catch {
+      payload = jwt.verify(token, this.secret()) as Partial<TokenPayload>;
+    } catch (error) {
       // AuthGuard already rejects invalid tokens. Keep logout idempotent if a token expires between the guard and this call.
+      if (error instanceof jwt.JsonWebTokenError) return;
+      throw error;
     }
+    if (!payload.jti) return;
+    // A storage failure must reach the controller before it clears the cookie.
+    await this.prisma.authSession.updateMany({
+      where: { jti: payload.jti, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
   }
 
   publicUser(user: User) {

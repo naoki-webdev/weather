@@ -1,11 +1,34 @@
 import type { ConfigService } from "@nestjs/config";
 import type { User } from "@prisma/client";
 import * as bcrypt from "bcryptjs";
+import * as jwt from "jsonwebtoken";
 
 import { PrismaService } from "../prisma.service";
 import { AuthService } from "./auth.service";
 
 describe("AuthService token sessions", () => {
+  it("propagates a database failure instead of reporting successful revocation", async () => {
+    const failure = new Error("database unavailable");
+    const updateMany = jest.fn().mockRejectedValue(failure);
+    const service = new AuthService(
+      { authSession: { updateMany } } as unknown as PrismaService,
+      { getOrThrow: () => "test-secret" } as unknown as ConfigService,
+    );
+    const token = jwt.sign({ userId: "1", jti: "session" }, "test-secret");
+    await expect(service.revokeToken(token)).rejects.toBe(failure);
+    expect(updateMany).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["invalid", jwt.sign({ jti: "expired" }, "test-secret", { expiresIn: -1 })])("keeps logout idempotent for an invalid or expired token", async (token) => {
+    const updateMany = jest.fn();
+    const service = new AuthService(
+      { authSession: { updateMany } } as unknown as PrismaService,
+      { getOrThrow: () => "test-secret" } as unknown as ConfigService,
+    );
+    await expect(service.revokeToken(token)).resolves.toBeUndefined();
+    expect(updateMany).not.toHaveBeenCalled();
+  });
+
   const user = {
     id: 1n,
     name: "デモユーザー",

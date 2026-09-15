@@ -3,6 +3,14 @@ import { ArgumentMetadata, ValidationPipe } from "@nestjs/common";
 import { CreateSessionDto, SessionController } from "./session.controller";
 
 describe("SessionController", () => {
+  it("does not clear the cookie or report success when revocation fails", async () => {
+    const failure = new Error("database unavailable");
+    const controller = new SessionController({ revokeToken: jest.fn().mockRejectedValue(failure) } as never);
+    const response = { clearCookie: jest.fn() };
+    await expect(controller.destroy({ authToken: "token" } as never, response as never)).rejects.toBe(failure);
+    expect(response.clearCookie).not.toHaveBeenCalled();
+  });
+
   it("rejects a missing session wrapper before the controller accesses it", async () => {
     const pipe = new ValidationPipe({ transform: true, whitelist: true });
     const metadata: ArgumentMetadata = { type: "body", metatype: CreateSessionDto };
