@@ -31,7 +31,8 @@ export function useWeatherDashboard() {
     citiesList.replaceCity(updated);
     cityDetail.mergeCity(updated);
     cityComparison.replaceCity(updated);
-  }, [citiesList.replaceCity, citiesList.toggleFavorite, cityComparison.replaceCity, cityDetail.mergeCity]);
+    await citiesList.loadCities();
+  }, [citiesList.loadCities, citiesList.replaceCity, citiesList.toggleFavorite, cityComparison.replaceCity, cityDetail.mergeCity]);
 
   return {
     cities: citiesList.cities,

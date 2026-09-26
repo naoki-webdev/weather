@@ -24,13 +24,17 @@ export function useCitiesList() {
   const citiesRequestSequence = useRef(0);
   const citiesRequestController = useRef<AbortController | null>(null);
   const favoriteRequestSequences = useRef(new Map<number, number>());
+  const favoriteRequestSequence = useRef(0);
 
   const listParams = useMemo<CityListParams>(
     () => ({ keyword, favorites_only: favoritesOnly, sort, direction, page, per_page: perPage }),
     [direction, favoritesOnly, keyword, page, perPage, sort],
   );
+  const listParamsRef = useRef(listParams);
+  listParamsRef.current = listParams;
 
   const loadCities = useCallback(async () => {
+    const currentListParams = listParamsRef.current;
     citiesRequestController.current?.abort();
     const controller = new AbortController();
     citiesRequestController.current = controller;
@@ -39,22 +43,32 @@ export function useCitiesList() {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetchCities(listParams, controller.signal);
+      const response = await fetchCities(currentListParams, controller.signal);
       if (requestSequence !== citiesRequestSequence.current) return;
       setCities(response.cities);
       setTotalCount(response.meta.total_count);
       setSummary(response.meta.summary);
+      const currentPage = currentListParams.page ?? 1;
+      const currentPerPage = currentListParams.per_page ?? 20;
+      const lastPage = Math.max(1, Math.ceil(response.meta.total_count / currentPerPage));
+      if (currentPage > lastPage) {
+        setCities([]);
+        setPageState(lastPage);
+      }
     } catch (requestError) {
       if (controller.signal.aborted || isAbortError(requestError) || requestSequence !== citiesRequestSequence.current) return;
       setError(getApiErrorMessage(requestError, t("weather.errors.fetch")));
     } finally {
       if (requestSequence === citiesRequestSequence.current) setLoading(false);
     }
-  }, [listParams]);
+  }, [listParams, page, perPage]);
 
   useEffect(() => {
     void loadCities();
-    return () => citiesRequestController.current?.abort();
+    return () => {
+      citiesRequestSequence.current += 1;
+      citiesRequestController.current?.abort();
+    };
   }, [loadCities]);
 
   const replaceCity = useCallback((updated: City) => {
@@ -62,7 +76,7 @@ export function useCitiesList() {
   }, []);
 
   const toggleFavorite = useCallback(async (cityId: number, favorite: boolean) => {
-    const requestSequence = (favoriteRequestSequences.current.get(cityId) ?? 0) + 1;
+    const requestSequence = ++favoriteRequestSequence.current;
     favoriteRequestSequences.current.set(cityId, requestSequence);
     setFavoriteSavingIds((current) => current.includes(cityId) ? current : [...current, cityId]);
     setError(null);

@@ -28,6 +28,7 @@ export function useCityDetail({ refreshCities, onCityRemoved, onCityUpdated }: U
 
   const openCity = useCallback(async (id: number) => {
     detailRequestController.current?.abort();
+    setSaving(false);
     const controller = new AbortController();
     detailRequestController.current = controller;
     const requestSequence = ++detailRequestSequence.current;
@@ -46,18 +47,25 @@ export function useCityDetail({ refreshCities, onCityRemoved, onCityUpdated }: U
   }, []);
 
   const addCity = useCallback(async (city: CitySearchResult) => {
+    detailRequestController.current?.abort();
+    detailRequestController.current = null;
+    const requestSequence = ++detailRequestSequence.current;
     setSaving(true);
     setError(null);
     try {
       const created = await createCity(city);
-      setSelectedCity(created);
-      setSearchOpen(false);
-      setDetailOpen(true);
+      if (requestSequence === detailRequestSequence.current) {
+        setSelectedCity(created);
+        setSearchOpen(false);
+        setDetailOpen(true);
+      }
       await refreshCities();
     } catch (requestError) {
-      setError(getApiErrorMessage(requestError, t("weather.errors.create")));
+      if (requestSequence === detailRequestSequence.current) {
+        setError(getApiErrorMessage(requestError, t("weather.errors.create")));
+      }
     } finally {
-      setSaving(false);
+      if (requestSequence === detailRequestSequence.current) setSaving(false);
     }
   }, [refreshCities]);
 
@@ -81,24 +89,32 @@ export function useCityDetail({ refreshCities, onCityRemoved, onCityUpdated }: U
         setError(getApiErrorMessage(requestError, t("weather.errors.sync")));
       }
     } finally {
-      setSaving(false);
+      if (requestSequence === detailRequestSequence.current) setSaving(false);
     }
   }, [onCityUpdated, refreshCities, selectedCity]);
 
   const removeCity = useCallback(async () => {
     if (!selectedCity) return;
+    const cityId = selectedCity.id;
+    const requestSequence = ++detailRequestSequence.current;
+    detailRequestController.current?.abort();
+    detailRequestController.current = null;
     setSaving(true);
     try {
-      await deleteCity(selectedCity.id);
-      onCityRemoved(selectedCity.id);
-      setDetailOpen(false);
-      setSelectedCity(null);
-      setError(null);
+      await deleteCity(cityId);
+      onCityRemoved(cityId);
+      if (requestSequence === detailRequestSequence.current) {
+        setDetailOpen(false);
+        setSelectedCity(null);
+        setError(null);
+      }
       await refreshCities();
     } catch (requestError) {
-      setError(getApiErrorMessage(requestError, t("weather.errors.delete")));
+      if (requestSequence === detailRequestSequence.current) {
+        setError(getApiErrorMessage(requestError, t("weather.errors.delete")));
+      }
     } finally {
-      setSaving(false);
+      if (requestSequence === detailRequestSequence.current) setSaving(false);
     }
   }, [onCityRemoved, refreshCities, selectedCity]);
 
@@ -110,6 +126,7 @@ export function useCityDetail({ refreshCities, onCityRemoved, onCityUpdated }: U
     detailRequestController.current?.abort();
     detailRequestController.current = null;
     detailRequestSequence.current += 1;
+    setSaving(false);
     setDetailOpen(false);
     setError(null);
   }, []);

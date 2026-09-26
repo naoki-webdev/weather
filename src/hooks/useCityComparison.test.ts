@@ -36,4 +36,38 @@ describe("useCityComparison", () => {
 
     expect(result.current.comparisonCities[0].history).toBe(history);
   });
+
+  test("clears the previous comparison while a new selection is loading", async () => {
+    let resolveNext: ((value: Awaited<ReturnType<typeof compareCities>>) => void) | undefined;
+    vi.mocked(compareCities)
+      .mockResolvedValueOnce({
+        cities: [city(1), city(2)],
+        meta: { count: 2, leader_id: 1, average_score: 80, history_period_days: 30 },
+      })
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveNext = resolve; }));
+
+    const { result } = renderHook(() => useCityComparison());
+    act(() => {
+      result.current.toggleCitySelection(1);
+      result.current.toggleCitySelection(2);
+    });
+    await waitFor(() => expect(result.current.comparisonCities).toHaveLength(2));
+
+    act(() => {
+      result.current.removeComparisonCity(1);
+      result.current.toggleCitySelection(3);
+    });
+
+    await waitFor(() => expect(result.current.comparisonLoading).toBe(true));
+    await waitFor(() => expect(resolveNext).toBeTypeOf("function"));
+    expect(result.current.comparisonCities).toEqual([]);
+    expect(result.current.comparisonMeta).toBeNull();
+
+    await act(async () => {
+      resolveNext?.({
+        cities: [city(2), city(3)],
+        meta: { count: 2, leader_id: 2, average_score: 70, history_period_days: 30 },
+      });
+    });
+  });
 });

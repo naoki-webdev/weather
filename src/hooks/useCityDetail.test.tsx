@@ -1,8 +1,8 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
-import { deleteCity, fetchCity, syncCity } from "../api/cityRequests";
-import type { City } from "../types/weather";
+import { createCity, deleteCity, fetchCity, syncCity } from "../api/cityRequests";
+import type { City, CitySearchResult } from "../types/weather";
 import { useCityDetail } from "./useCityDetail";
 
 vi.mock("../api/cityRequests", () => ({
@@ -143,5 +143,57 @@ describe("useCityDetail", () => {
 
     expect(result.current.selectedCity?.id).toBe(2);
     expect(apiOptions.onCityUpdated).not.toHaveBeenCalledWith(expect.objectContaining({ id: 1 }));
+  });
+
+  test("does not close a newer city when an older delete resolves", async () => {
+    const deletion = deferred<void>();
+    vi.mocked(fetchCity).mockResolvedValueOnce(city(1)).mockResolvedValueOnce(city(2));
+    vi.mocked(deleteCity).mockReturnValue(deletion.promise);
+    const apiOptions = options();
+    const { result } = renderHook(() => useCityDetail(apiOptions));
+
+    await act(async () => {
+      await result.current.openCity(1);
+    });
+    let deleteRequest!: Promise<void>;
+    act(() => {
+      deleteRequest = result.current.removeCity();
+      result.current.closeDetail();
+      void result.current.openCity(2);
+    });
+    await waitFor(() => expect(result.current.selectedCity?.id).toBe(2));
+
+    await act(async () => {
+      deletion.resolve();
+      await deleteRequest;
+    });
+
+    expect(result.current.selectedCity?.id).toBe(2);
+    expect(result.current.detailOpen).toBe(true);
+    expect(result.current.saving).toBe(false);
+    expect(apiOptions.onCityRemoved).toHaveBeenCalledWith(1);
+  });
+
+  test("refreshes the city list when an add resolves after the detail changed", async () => {
+    const creation = deferred<City>();
+    const apiOptions = options();
+    vi.mocked(createCity).mockReturnValue(creation.promise);
+    const { result } = renderHook(() => useCityDetail(apiOptions));
+    const newCity: CitySearchResult = { ...city(3), name: "追加都市" };
+
+    let addRequest!: Promise<void>;
+    act(() => {
+      addRequest = result.current.addCity(newCity);
+      result.current.closeDetail();
+    });
+
+    await act(async () => {
+      creation.resolve(city(3));
+      await addRequest;
+    });
+
+    expect(apiOptions.refreshCities).toHaveBeenCalledTimes(1);
+    expect(result.current.selectedCity).toBeNull();
+    expect(result.current.detailOpen).toBe(false);
   });
 });

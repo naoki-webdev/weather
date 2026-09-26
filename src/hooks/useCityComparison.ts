@@ -31,6 +31,8 @@ export function useCityComparison(preferenceUpdatedAt?: string) {
 
     setComparisonLoading(true);
     setComparisonError(null);
+    setComparisonCities([]);
+    setComparisonMeta(null);
     compareCities(selectedIds, controller.signal)
       .then((response) => {
         if (controller.signal.aborted || requestSequence !== comparisonRequestSequence.current) return;

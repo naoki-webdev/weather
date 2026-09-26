@@ -127,7 +127,7 @@ export class WeatherClient {
     const cached = this.cache.get(key);
     const now = Date.now();
     if (cached && cached.expiresAt > now) {
-      // Map preserves insertion order, so reinsert hits to keep this cache LRU-like.
+      // Mapは挿入順を保持するため、ヒットした項目を再挿入してLRUに近いキャッシュ順を保ちます。
       this.cache.delete(key);
       this.cache.set(key, cached);
       return cached.value as T;

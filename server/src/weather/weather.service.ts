@@ -29,7 +29,7 @@ export class WeatherService {
     const forecast = payload.forecast.current as Record<string, unknown> | undefined;
     const airQuality = payload.airQuality.current as Record<string, unknown> | undefined;
     return this.prisma.$transaction(async (database) => {
-      // Keep the lock only around the final read/write. External HTTP calls stay outside the transaction.
+      // ロックは最後の読み書き処理だけにかけ、外部HTTP呼び出しはトランザクションの外で行います。
       await database.$queryRaw`SELECT pg_advisory_xact_lock(${city.id})`;
       const latestAfterFetch = await database.weatherSnapshot.findFirst({ where: { cityId: city.id }, orderBy: { fetchedAt: "desc" } });
       if (latestAfterFetch && latestAfterFetch.fetchedAt >= syncStartedAt) return latestAfterFetch;

@@ -44,12 +44,13 @@ export class AuthService {
     try {
       payload = jwt.verify(token, this.secret()) as Partial<TokenPayload>;
     } catch (error) {
-      // AuthGuard already rejects invalid tokens. Keep logout idempotent if a token expires between the guard and this call.
+      // AuthGuardが無効なトークンをすでに拒否するため、ガード後からこの呼び出しまでの間に
+      // トークンが期限切れになっても、ログアウトを冪等に保ちます。
       if (error instanceof jwt.JsonWebTokenError) return;
       throw error;
     }
     if (!payload.jti) return;
-    // A storage failure must reach the controller before it clears the cookie.
+    // Cookieを消去する前に、ストレージの失敗をコントローラーへ伝える必要があります。
     await this.prisma.authSession.updateMany({
       where: { jti: payload.jti, revokedAt: null },
       data: { revokedAt: new Date() },
