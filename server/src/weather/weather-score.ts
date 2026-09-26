@@ -2,10 +2,10 @@ export const SCORE_COMPONENTS = ["temperature", "precipitation", "humidity", "wi
 export type ScoreComponent = typeof SCORE_COMPONENTS[number];
 
 export const MAX_SCORE = 100;
-const TEMPERATURE_PENALTY_PER_DEGREE = 5;
-const IDEAL_HUMIDITY = 50;
-const HUMIDITY_PENALTY_PER_PERCENT = 2;
-const WIND_PENALTY_PER_KMH = 2.5;
+export const TEMPERATURE_PENALTY_PER_DEGREE = 5;
+export const IDEAL_HUMIDITY = 50;
+export const HUMIDITY_PENALTY_PER_PERCENT = 2;
+export const WIND_PENALTY_PER_KMH = 2.5;
 export type WeatherPreferenceLike = {
   targetTemperature: unknown;
   temperatureWeight: number;
@@ -84,13 +84,10 @@ export function weightsFor(preference: WeatherPreferenceLike) {
 export function scoreFor(preference: WeatherPreferenceLike, snapshot: SnapshotLike | null) {
   const breakdown = breakdownFor(preference, snapshot);
   const weights = weightsFor(preference);
-  const availableComponents = SCORE_COMPONENTS.filter((component) => breakdown[component] !== null);
-  if (availableComponents.length === 0) return 0;
+  const availableComponents = SCORE_COMPONENTS.filter((component) => breakdown[component] !== null && weights[component] > 0);
+  if (availableComponents.length === 0) return null;
 
   const totalWeight = availableComponents.reduce((sum, component) => sum + weights[component], 0);
-  if (totalWeight === 0) {
-    return Math.round(availableComponents.reduce((sum, component) => sum + breakdown[component]!, 0) / availableComponents.length);
-  }
   return Math.round(availableComponents.reduce((sum, component) => sum + breakdown[component]! * weights[component], 0) / totalWeight);
 }
 

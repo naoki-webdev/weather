@@ -7,11 +7,18 @@ import { logStructured } from "../observability/structured-log";
 export class RouteRequestError extends Error {}
 
 type Coordinates = { latitude: unknown; longitude: unknown };
+type RouteResult = { durationSeconds: number; distanceMeters: number };
+type CachedRoute = { expiresAt: number; route: RouteResult };
+
 const MAX_ROUTE_DURATION_SECONDS = 7 * 24 * 60 * 60;
+const ROUTE_CACHE_TTL_MS = 5 * 60_000;
+const ROUTE_CACHE_LIMIT = 256;
 
 @Injectable()
 export class RouteClient {
   private readonly timeoutMs = 10_000;
+  private readonly routeCache = new Map<string, CachedRoute>();
+  private readonly inFlightRoutes = new Map<string, Promise<RouteResult>>();
 
   constructor(private readonly config: ConfigService) {}
 
@@ -21,6 +28,34 @@ export class RouteClient {
     const url = new URL(`${baseUrl}/route/v1/driving/${coordinates}`);
     url.searchParams.set("overview", "false");
     url.searchParams.set("alternatives", "false");
+    const key = url.toString();
+    const cached = this.routeCache.get(key);
+    if (cached && cached.expiresAt > Date.now()) return cached.route;
+    if (cached) this.routeCache.delete(key);
+
+    const inFlight = this.inFlightRoutes.get(key);
+    if (inFlight) return inFlight;
+
+    const request = this.fetchRoute(url);
+    this.inFlightRoutes.set(key, request);
+    try {
+      const route = await request;
+      const now = Date.now();
+      for (const [cacheKey, entry] of this.routeCache) {
+        if (entry.expiresAt <= now) this.routeCache.delete(cacheKey);
+      }
+      if (this.routeCache.size >= ROUTE_CACHE_LIMIT) {
+        const oldestKey = this.routeCache.keys().next().value;
+        if (oldestKey !== undefined) this.routeCache.delete(oldestKey);
+      }
+      this.routeCache.set(key, { route, expiresAt: now + ROUTE_CACHE_TTL_MS });
+      return route;
+    } finally {
+      if (this.inFlightRoutes.get(key) === request) this.inFlightRoutes.delete(key);
+    }
+  }
+
+  private async fetchRoute(url: URL): Promise<RouteResult> {
     const startedAt = process.hrtime.bigint();
 
     let response: Response;

@@ -63,7 +63,7 @@ export class WeatherClient {
 
   async weatherFor(city: Pick<City, "externalId" | "latitude" | "longitude">) {
     const coordinates = `${city.externalId}/${city.latitude}/${city.longitude}`;
-    const [forecast, airQuality] = await Promise.all([
+    const [forecastResult, airQualityResult] = await Promise.allSettled([
       this.cached(`forecast:${coordinates}`, 15 * 60_000, () => this.getJson(this.forecastEndpoint, {
         latitude: Number(city.latitude),
         longitude: Number(city.longitude),
@@ -80,12 +80,19 @@ export class WeatherClient {
       }, "open_meteo_air_quality")),
     ]);
 
-    return { forecast, airQuality };
+    if (forecastResult.status === "rejected" && airQualityResult.status === "rejected") {
+      throw forecastResult.reason;
+    }
+
+    return {
+      forecast: forecastResult.status === "fulfilled" ? forecastResult.value : null,
+      airQuality: airQualityResult.status === "fulfilled" ? airQualityResult.value : null,
+    };
   }
 
   async hourlyWeatherFor(city: Pick<City, "externalId" | "latitude" | "longitude">, targetAt: Date) {
     const coordinates = `${city.externalId}/${city.latitude}/${city.longitude}`;
-    const forecast = await this.cached(`hourly-forecast:${coordinates}:${targetAt.toISOString().slice(0, 10)}`, 15 * 60_000, () => this.getJson(this.forecastEndpoint, {
+    const forecast = await this.cached(`hourly-forecast:${coordinates}`, 15 * 60_000, () => this.getJson(this.forecastEndpoint, {
       latitude: Number(city.latitude),
       longitude: Number(city.longitude),
       hourly: "temperature_2m,precipitation_probability,precipitation,wind_speed_10m,weather_code",

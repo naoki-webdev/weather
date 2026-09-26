@@ -19,7 +19,7 @@ import { t } from "../i18n";
 import { useWeatherDashboard } from "../hooks/useWeatherDashboard";
 
 export default function WeatherPage() {
-  const { user, signOut } = useAuth();
+  const { user, error: authError, clearError, signOut } = useAuth();
   const dashboard = useWeatherDashboard();
   const readOnly = user?.read_only ?? false;
 
@@ -31,6 +31,7 @@ export default function WeatherPage() {
     <WeatherAppShell userName={user?.name} readOnly={readOnly} onSearch={dashboard.openSearch} onPreference={dashboard.openPreference} onSignOut={() => { void signOut(); }}>
       <Container component="main" maxWidth="xl" sx={{ py: { xs: 1.5, md: 2 } }}>
         <Stack spacing={2}>
+          {authError && <Alert severity="error" role="alert" onClose={clearError}>{authError}</Alert>}
           <Box sx={{ display: "flex", justifyContent: "flex-end" }}>
             <Link href="https://open-meteo.com/" target="_blank" rel="noreferrer" underline="hover" variant="caption" color="text.secondary" sx={{ whiteSpace: "nowrap" }}>{t("weather.source")}</Link>
           </Box>

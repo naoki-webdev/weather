@@ -9,6 +9,7 @@ const SNAPSHOT_RETENTION_DAYS = 90;
 const FRESHNESS_WINDOW_MS = 15 * 60_000;
 const WEATHER_SYNC_LOCK_NAME = "weather-sync";
 const WEATHER_SYNC_LOCK_RENEWAL_MS = 5 * 60_000;
+const WEATHER_SYNC_CONCURRENCY = 5;
 
 @Injectable()
 export class WeatherService {
@@ -26,8 +27,9 @@ export class WeatherService {
     if (latest && !force && latest.fetchedAt.getTime() >= Date.now() - FRESHNESS_WINDOW_MS) return latest;
 
     const payload = await this.client.weatherFor(city);
-    const forecast = payload.forecast.current as Record<string, unknown> | undefined;
-    const airQuality = payload.airQuality.current as Record<string, unknown> | undefined;
+    if (!payload.forecast && !payload.airQuality) throw new OpenMeteoRequestError("Open-Meteo returned no weather data.");
+    const forecast = payload.forecast?.current as Record<string, unknown> | undefined;
+    const airQuality = payload.airQuality?.current as Record<string, unknown> | undefined;
     return this.prisma.$transaction(async (database) => {
       // ロックは最後の読み書き処理だけにかけ、外部HTTP呼び出しはトランザクションの外で行います。
       await database.$queryRaw`SELECT pg_advisory_xact_lock(${city.id})`;
@@ -39,15 +41,15 @@ export class WeatherService {
         data: {
           cityId: city.id,
           fetchedAt: new Date(),
-          currentTemperature: this.numberValue(forecast?.temperature_2m),
-          currentHumidity: this.integerValue(forecast?.relative_humidity_2m),
-          currentPrecipitation: this.numberValue(forecast?.precipitation),
-          currentWindSpeed: this.numberValue(forecast?.wind_speed_10m),
-          currentWeatherCode: this.integerValue(forecast?.weather_code),
-          currentUsAqi: this.numberValue(airQuality?.us_aqi),
-          currentPm25: this.numberValue(airQuality?.pm2_5),
-          currentPm10: this.numberValue(airQuality?.pm10),
-          dailyData: payload.forecast.daily ?? {},
+          currentTemperature: forecast ? this.numberValue(forecast.temperature_2m) : latestAfterFetch?.currentTemperature ?? null,
+          currentHumidity: forecast ? this.integerValue(forecast.relative_humidity_2m) : latestAfterFetch?.currentHumidity ?? null,
+          currentPrecipitation: forecast ? this.numberValue(forecast.precipitation) : latestAfterFetch?.currentPrecipitation ?? null,
+          currentWindSpeed: forecast ? this.numberValue(forecast.wind_speed_10m) : latestAfterFetch?.currentWindSpeed ?? null,
+          currentWeatherCode: forecast ? this.integerValue(forecast.weather_code) : latestAfterFetch?.currentWeatherCode ?? null,
+          currentUsAqi: airQuality ? this.numberValue(airQuality.us_aqi) : latestAfterFetch?.currentUsAqi ?? null,
+          currentPm25: airQuality ? this.numberValue(airQuality.pm2_5) : latestAfterFetch?.currentPm25 ?? null,
+          currentPm10: airQuality ? this.numberValue(airQuality.pm10) : latestAfterFetch?.currentPm10 ?? null,
+          dailyData: payload.forecast?.daily ?? latestAfterFetch?.dailyData ?? {},
           sourceName: "Open-Meteo",
         },
       });
@@ -75,13 +77,7 @@ export class WeatherService {
         lockRenewal.unref?.();
         try {
           const cities = await this.prisma.city.findMany();
-          for (const city of cities) {
-            try {
-              await this.syncCity(city);
-            } catch (error) {
-              this.logger.warn(`Weather sync failed for city ${city.id}: ${error instanceof Error ? error.message : String(error)}`);
-            }
-          }
+          await this.syncCitiesWithBoundedConcurrency(cities);
           await this.pruneSnapshots();
           return true;
         } finally {
@@ -131,6 +127,24 @@ export class WeatherService {
     } catch (error) {
       this.logger.error(`Failed to release the weather sync lock: ${error instanceof Error ? error.message : String(error)}`);
     }
+  }
+
+  private async syncCitiesWithBoundedConcurrency(cities: City[]) {
+    let nextIndex = 0;
+    const worker = async () => {
+      while (true) {
+        const index = nextIndex++;
+        if (index >= cities.length) return;
+        const city = cities[index];
+        try {
+          await this.syncCity(city);
+        } catch (error) {
+          this.logger.warn(`Weather sync failed for city ${city.id}: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      }
+    };
+
+    await Promise.all(Array.from({ length: Math.min(WEATHER_SYNC_CONCURRENCY, cities.length) }, () => worker()));
   }
 
   private async pruneSnapshots() {

@@ -165,4 +165,52 @@ describe("CitiesQueryService", () => {
       where: { userId: 99n, id: { in: [2n] } },
     }));
   });
+
+  it("uses database pagination for score sorting", async () => {
+    const preference = {
+      targetTemperature: 21,
+      temperatureWeight: 1,
+      precipitationWeight: 1,
+      humidityWeight: 1,
+      windWeight: 1,
+      airQualityWeight: 1,
+    } as unknown as WeatherPreference;
+    const city = {
+      id: 2n,
+      name: "螟ｧ髦ｪ",
+      country: "譌･譛ｬ",
+      countryCode: "JP",
+      admin1: "Osaka",
+      latitude: 34,
+      longitude: 135,
+      timezone: "Asia/Tokyo",
+      externalId: "osaka",
+      sourceName: "Open-Meteo",
+      favorite: false,
+      createdAt: new Date("2026-08-01T00:00:00.000Z"),
+      updatedAt: new Date("2026-08-01T00:00:00.000Z"),
+      weatherSnapshots: [],
+    };
+    const findMany = jest.fn().mockResolvedValue([city]);
+    const queryRaw = jest.fn()
+      .mockResolvedValueOnce([{ recommended: 1, average_temperature: 20, refreshed: 2 }])
+      .mockResolvedValueOnce([{ id: 2n }]);
+    const prisma = {
+      city: { count: jest.fn().mockResolvedValue(2), findMany },
+      $queryRaw: queryRaw,
+    } as unknown as PrismaService;
+    const weatherPreferenceService = { preferenceFor: jest.fn().mockResolvedValue(preference) } as unknown as WeatherPreferenceService;
+    const service = new CitiesQueryService(prisma, weatherPreferenceService);
+
+    await service.list(99n, { sort: "score", direction: "desc", page: "2", per_page: "1" });
+
+    expect(queryRaw).toHaveBeenCalledTimes(2);
+    const pageQuery = queryRaw.mock.calls[1][0] as { sql: string };
+    expect(pageQuery.sql).toContain('ORDER BY "score" DESC');
+    expect(pageQuery.sql).toContain("OFFSET");
+    expect(pageQuery.sql).toContain("LIMIT");
+    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { userId: 99n, id: { in: [2n] } },
+    }));
+  });
 });

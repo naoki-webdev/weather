@@ -114,4 +114,37 @@ describe("WeatherClient hourly forecast", () => {
     resolveAirQuality({ current: {} });
     await request;
   });
+
+  it("returns successful forecast data when the air quality request fails", async () => {
+    jest.spyOn(global, "fetch").mockImplementation(async (input) => String(input).includes("air-quality")
+      ? ({ ok: false, status: 503 } as Response)
+      : ({ ok: true, json: async () => ({ current: { temperature_2m: 21 } }) } as Response));
+
+    await expect(new WeatherClient().weatherFor(city)).resolves.toEqual({
+      forecast: { current: { temperature_2m: 21 } },
+      airQuality: null,
+    });
+  });
+
+  it("shares hourly forecast cache across target dates", async () => {
+    const fetchMock = jest.spyOn(global, "fetch").mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        hourly: {
+          time: ["2026-08-20T00:00", "2026-08-21T00:00"],
+          temperature_2m: [20, 21],
+          precipitation_probability: [0, 0],
+          precipitation: [0, 0],
+          wind_speed_10m: [1, 1],
+          weather_code: [0, 0],
+        },
+      }),
+    } as Response);
+    const client = new WeatherClient();
+
+    await client.hourlyWeatherFor(city, new Date("2026-08-20T00:00:00Z"));
+    await client.hourlyWeatherFor(city, new Date("2026-08-21T00:00:00Z"));
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
 });

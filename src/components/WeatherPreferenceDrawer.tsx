@@ -38,11 +38,11 @@ export default function WeatherPreferenceDrawer({ open, readOnly, saving, prefer
   const [presetId, setPresetId] = useState("");
 
   useEffect(() => {
-    if (preference) {
+    if (open && preference) {
       setValues(preference);
       setPresetId("");
     }
-  }, [preference]);
+  }, [open, preference]);
 
   const setNumber = (key: keyof WeatherPreference, value: number) => setValues((current) => ({ ...current, [key]: value }));
   const applyPreset = (id: string) => {

@@ -10,7 +10,7 @@ vi.mock("../api/cityRequests", () => ({
 }));
 
 function city(id: number, history?: City["history"]): City {
-  return { id, name: `都市${id}`, history } as City;
+  return { id, name: `都市${id}`, score: id === 1 ? 90 : 50, history } as City;
 }
 
 describe("useCityComparison", () => {
@@ -35,6 +35,24 @@ describe("useCityComparison", () => {
     });
 
     expect(result.current.comparisonCities[0].history).toBe(history);
+  });
+
+  test("updates the comparison leader and average with a changed city score", async () => {
+    vi.mocked(compareCities).mockResolvedValue({
+      cities: [city(1), city(2)],
+      meta: { count: 2, leader_id: 1, average_score: 70, history_period_days: 30 },
+    });
+    const { result } = renderHook(() => useCityComparison());
+
+    act(() => {
+      result.current.toggleCitySelection(1);
+      result.current.toggleCitySelection(2);
+    });
+    await waitFor(() => expect(result.current.comparisonCities).toHaveLength(2));
+
+    act(() => result.current.replaceCity({ ...city(2), score: 100 }));
+
+    expect(result.current.comparisonMeta).toMatchObject({ leader_id: 2, average_score: 95 });
   });
 
   test("clears the previous comparison while a new selection is loading", async () => {

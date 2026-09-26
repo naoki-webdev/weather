@@ -100,6 +100,19 @@ describe("useCityDetail", () => {
     expect(result.current.error).toBeNull();
   });
 
+  test("reloads selected city details without triggering a weather sync", async () => {
+    const apiOptions = options();
+    vi.mocked(fetchCity).mockResolvedValueOnce(city(1)).mockResolvedValueOnce({ ...city(1), score: 88 });
+    const { result } = renderHook(() => useCityDetail(apiOptions));
+
+    await act(async () => { await result.current.openCity(1); });
+    await act(async () => { await result.current.reloadSelectedCity(); });
+
+    expect(result.current.selectedCity?.score).toBe(88);
+    expect(apiOptions.onCityUpdated).toHaveBeenCalledWith(expect.objectContaining({ id: 1, score: 88 }));
+    expect(syncCity).not.toHaveBeenCalled();
+  });
+
   test("ignores a detail response after the drawer is closed", async () => {
     const pending = deferred<City>();
     vi.mocked(fetchCity).mockReturnValue(pending.promise);

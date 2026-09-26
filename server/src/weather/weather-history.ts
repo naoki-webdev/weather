@@ -31,7 +31,7 @@ export function historyFor(
     if (!current || snapshot.fetchedAt > current.fetchedAt) return snapshot;
     return current;
   }, undefined);
-  const scores = period.map((snapshot) => scoreFor(preference, snapshot));
+  const scores = period.map((snapshot) => scoreFor(preference, snapshot)).filter((value): value is number => value !== null);
   const averageScore = average(scores);
   const currentScore = latest ? scoreFor(preference, latest) : null;
 

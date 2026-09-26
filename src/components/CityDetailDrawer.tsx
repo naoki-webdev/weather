@@ -49,7 +49,8 @@ function formatScoreDelta(value: number | null | undefined) {
   return `${value > 0 ? "+" : ""}${value.toFixed(1)}点`;
 }
 
-function scoreColor(score: number) {
+function scoreColor(score: number | null) {
+  if (score === null) return "text.secondary";
   if (score >= 70) return "success.main";
   if (score >= 50) return "warning.main";
   return "text.primary";
@@ -76,7 +77,7 @@ export default function CityDetailDrawer({ open, city, readOnly, saving, onClose
               <Typography variant="body2" color="text.secondary">{[city.admin1, city.country].filter(Boolean).join(" / ")}</Typography>
             </Box>
             <Stack direction="row" spacing={0.5} alignItems="center">
-              <Typography variant="h6" fontWeight={850} color={scoreColor(city.score)}>{city.score}点</Typography>
+              <Typography variant="h6" fontWeight={850} color={scoreColor(city.score)}>{city.score === null ? "—" : `${city.score}点`}</Typography>
               <IconButton size="small" onClick={onClose} aria-label={t("actions.close")} title={t("actions.close")}><CloseIcon /></IconButton>
             </Stack>
           </Stack>

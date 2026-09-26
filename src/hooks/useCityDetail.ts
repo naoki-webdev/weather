@@ -93,6 +93,27 @@ export function useCityDetail({ refreshCities, onCityRemoved, onCityUpdated }: U
     }
   }, [onCityUpdated, refreshCities, selectedCity]);
 
+  const reloadSelectedCity = useCallback(async () => {
+    if (!selectedCity) return;
+    detailRequestController.current?.abort();
+    const controller = new AbortController();
+    detailRequestController.current = controller;
+    const requestSequence = ++detailRequestSequence.current;
+    const cityId = selectedCity.id;
+
+    try {
+      const updated = await fetchCity(cityId, controller.signal);
+      if (controller.signal.aborted || requestSequence !== detailRequestSequence.current) return;
+      setSelectedCity(updated);
+      onCityUpdated(updated);
+      setError(null);
+    } catch (requestError) {
+      if (!controller.signal.aborted && !isAbortError(requestError) && requestSequence === detailRequestSequence.current) {
+        setError(getApiErrorMessage(requestError, t("weather.errors.fetch_detail")));
+      }
+    }
+  }, [onCityUpdated, selectedCity]);
+
   const removeCity = useCallback(async () => {
     if (!selectedCity) return;
     const cityId = selectedCity.id;
@@ -140,6 +161,7 @@ export function useCityDetail({ refreshCities, onCityRemoved, onCityUpdated }: U
     openCity,
     addCity,
     refreshCity,
+    reloadSelectedCity,
     removeCity,
     mergeCity,
     closeDetail,

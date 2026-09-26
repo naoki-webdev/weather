@@ -5,11 +5,23 @@ import { PrismaService } from "../prisma.service";
 import { serializeCity, type CityWithSnapshots } from "../weather/city-serializer";
 import { historyRange, PERIOD_DAYS } from "../weather/weather-history";
 import { scoreFor } from "../weather/weather-score";
+import { scoreComponentsSqlFor, scoreSqlFromComponents } from "../weather/weather-score.sql";
 import { WeatherPreferenceService } from "./weather-preference.service";
 import { CityComparisonInputError, CityComparisonNotFoundError, CityQueryInputError } from "./cities.errors";
 
 export const LATEST_CITY_INCLUDE = {
   weatherSnapshots: { orderBy: { fetchedAt: "desc" as const }, take: 1 },
+};
+
+type CityListSummary = {
+  recommended: number;
+  average_temperature: number | null;
+  refreshed: number;
+};
+
+type CityListMetadata = {
+  total_count: number;
+  summary: CityListSummary;
 };
 
 @Injectable()
@@ -32,30 +44,45 @@ export class CitiesQueryService {
     const key = this.sortKey(params.sort);
     const descending = params.direction !== "asc";
     const direction = descending ? ("desc" as const) : ("asc" as const);
-    const totalCount = await this.prisma.city.count({ where });
-    const summary = await this.summaryFor(userId, keyword, favoriteOnly, preference);
-    const allCities = key === "score"
-      ? await this.prisma.city.findMany({ where, include: LATEST_CITY_INCLUDE })
-      : null;
-    const pageCities = key === "name"
-      ? await this.prisma.city.findMany({
-        where,
-        include: LATEST_CITY_INCLUDE,
-        orderBy: [{ name: direction }, { id: "asc" }],
-        skip: (page - 1) * perPage,
-        take: perPage,
-      })
-      : key === "updated_at" || key === "temperature"
-        ? await this.pageByLatestSnapshot(userId, keyword, favoriteOnly, page, perPage, key, descending)
-        : this.sortCities(allCities ?? [], preference, key, params.direction).slice((page - 1) * perPage, page * perPage);
+    const includeSummary = params.include_summary !== "false";
+    let metadata: CityListMetadata | null = null;
+    let pageCities: CityWithSnapshots[];
+
+    if (key === "score" && includeSummary) {
+      const result = await this.scorePageAndSummary(userId, keyword, favoriteOnly, page, perPage, preference, descending);
+      metadata = result.metadata;
+      pageCities = result.cities;
+    } else {
+      const loadPage = () => key === "score"
+        ? this.pageByScore(userId, keyword, favoriteOnly, page, perPage, preference, descending)
+        : key === "name"
+          ? this.prisma.city.findMany({
+            where,
+            include: LATEST_CITY_INCLUDE,
+            orderBy: [{ name: direction }, { id: "asc" }],
+            skip: (page - 1) * perPage,
+            take: perPage,
+          })
+          : key === "updated_at" || key === "temperature"
+            ? this.pageByLatestSnapshot(userId, keyword, favoriteOnly, page, perPage, key, descending)
+            : Promise.resolve([] as CityWithSnapshots[]);
+
+      if (includeSummary) {
+        [metadata, pageCities] = await Promise.all([
+          this.summaryFor(userId, keyword, favoriteOnly, preference),
+          loadPage(),
+        ]);
+      } else {
+        pageCities = await loadPage();
+      }
+    }
 
     return {
       cities: pageCities.map((city) => serializeCity(city, preference)),
       meta: {
         page,
         per_page: perPage,
-        total_count: totalCount,
-        summary,
+        ...(metadata ?? {}),
       },
     };
   }
@@ -70,8 +97,12 @@ export class CitiesQueryService {
 
     const preference = await this.weatherPreferenceService.preferenceFor(userId);
     const scores = new Map(citiesWithHistory.map((city) => [city.id, scoreFor(preference, city.weatherSnapshots[0] ?? null)]));
-    const leaderId = uniqueIds.slice().sort((left, right) => (scores.get(right) ?? 0) - (scores.get(left) ?? 0))[0] ?? null;
-    const averageScore = this.average([...scores.values()]);
+    const scoredCities = uniqueIds.flatMap((id) => {
+      const score = scores.get(id);
+      return score === null || score === undefined ? [] : [{ id, score }];
+    });
+    const leaderId = scoredCities.slice().sort((left, right) => right.score - left.score)[0]?.id ?? null;
+    const averageScore = this.average(scoredCities.map(({ score }) => score));
 
     return {
       cities: uniqueIds.map((id) => citiesWithHistory.find((city) => city.id === id)!).map((city) => serializeCity(city, preference, true)),
@@ -117,6 +148,8 @@ export class CitiesQueryService {
     return cities.slice().sort((left, right) => {
       const leftValue = this.sortValue(left, preference, key!);
       const rightValue = this.sortValue(right, preference, key!);
+      if (leftValue === null || leftValue === undefined) return rightValue === null || rightValue === undefined ? (left.id < right.id ? -1 : left.id > right.id ? 1 : 0) : 1;
+      if (rightValue === null || rightValue === undefined) return -1;
       if (leftValue === rightValue) return left.id < right.id ? -1 : left.id > right.id ? 1 : 0;
       if (typeof leftValue === "string" && typeof rightValue === "string") return descending ? rightValue.localeCompare(leftValue) : leftValue.localeCompare(rightValue);
       return descending ? Number(rightValue) - Number(leftValue) : Number(leftValue) - Number(rightValue);
@@ -142,27 +175,45 @@ export class CitiesQueryService {
     };
   }
 
-  private async summaryFor(userId: bigint, keyword: string, favoriteOnly: boolean, preference: WeatherPreference) {
-    const keywordPattern = `%${keyword}%`;
-    const targetTemperature = Number(preference.targetTemperature);
-    const temperatureWeight = Number(preference.temperatureWeight);
-    const precipitationWeight = Number(preference.precipitationWeight);
-    const humidityWeight = Number(preference.humidityWeight);
-    const windWeight = Number(preference.windWeight);
-    const airQualityWeight = Number(preference.airQualityWeight);
+  private ilikePattern(keyword: string) {
+    return `%${keyword.replace(/[\\%_]/g, "\\$&")}%`;
+  }
+
+  private async summaryFor(userId: bigint, keyword: string, favoriteOnly: boolean, preference: WeatherPreference): Promise<CityListMetadata> {
+    const keywordPattern = this.ilikePattern(keyword);
+    const scoreComponents = scoreComponentsSqlFor(preference, {
+      temperature: Prisma.sql`latest."current_temperature"`,
+      precipitation: Prisma.sql`latest."precipitation_probability"`,
+      humidity: Prisma.sql`latest."current_humidity"`,
+      wind: Prisma.sql`latest."current_wind_speed"`,
+      airQuality: Prisma.sql`latest."current_us_aqi"`,
+    });
+    const scoreFromComponents = scoreSqlFromComponents(preference, {
+      temperature: Prisma.sql`components."temperature_score"`,
+      precipitation: Prisma.sql`components."precipitation_score"`,
+      humidity: Prisma.sql`components."humidity_score"`,
+      wind: Prisma.sql`components."wind_score"`,
+      air_quality: Prisma.sql`components."air_quality_score"`,
+    });
     const rows = await this.prisma.$queryRaw<Array<{
+      total_count: number;
       recommended: number;
       average_temperature: number | null;
       refreshed: number;
     }>>(Prisma.sql`
       WITH latest AS (
-        SELECT
-          snapshot."id" AS snapshot_id,
-          snapshot."current_temperature",
-          snapshot."current_humidity",
-          snapshot."current_wind_speed",
-          snapshot."current_us_aqi",
-          snapshot."daily_data"
+          SELECT
+            snapshot."id" AS snapshot_id,
+            snapshot."current_temperature",
+            snapshot."current_humidity",
+            snapshot."current_wind_speed",
+            snapshot."current_us_aqi",
+            CASE
+              WHEN jsonb_typeof(snapshot."daily_data" -> 'precipitation_probability_max') = 'array'
+                AND jsonb_typeof(snapshot."daily_data" -> 'precipitation_probability_max' -> 0) = 'number'
+              THEN (snapshot."daily_data" -> 'precipitation_probability_max' ->> 0)::double precision
+              ELSE NULL
+            END AS "precipitation_probability"
         FROM "cities" AS city
         LEFT JOIN LATERAL (
           SELECT
@@ -188,80 +239,241 @@ export class CitiesQueryService {
       ), components AS (
         SELECT
           latest.*,
-          CASE
-            WHEN current_temperature IS NULL THEN NULL
-            ELSE GREATEST(ROUND(100 - ABS(current_temperature::double precision - ${targetTemperature}) * 5), 0)
-          END AS temperature_score,
-          CASE
-            WHEN jsonb_typeof(daily_data -> 'precipitation_probability_max') = 'array'
-              AND jsonb_typeof(daily_data -> 'precipitation_probability_max' -> 0) = 'number'
-            THEN GREATEST(ROUND(100 - (daily_data -> 'precipitation_probability_max' ->> 0)::double precision), 0)
-            ELSE NULL
-          END AS precipitation_score,
-          CASE
-            WHEN current_humidity IS NULL THEN NULL
-            ELSE GREATEST(ROUND(100 - ABS(current_humidity::double precision - 50) * 2), 0)
-          END AS humidity_score,
-          CASE
-            WHEN current_wind_speed IS NULL THEN NULL
-            ELSE GREATEST(ROUND(100 - current_wind_speed::double precision * 2.5), 0)
-          END AS wind_score,
-          CASE
-            WHEN current_us_aqi IS NULL THEN NULL
-            ELSE GREATEST(ROUND(100 - current_us_aqi::double precision), 0)
-          END AS air_quality_score
+          ${scoreComponents.temperature} AS "temperature_score",
+          ${scoreComponents.precipitation} AS "precipitation_score",
+          ${scoreComponents.humidity} AS "humidity_score",
+          ${scoreComponents.wind} AS "wind_score",
+          ${scoreComponents.air_quality} AS "air_quality_score"
         FROM latest
-      ), weighted AS (
+      ), scored AS (
         SELECT
           components.*,
-          (
-            CASE WHEN temperature_score IS NOT NULL THEN ${temperatureWeight} ELSE 0 END
-            + CASE WHEN precipitation_score IS NOT NULL THEN ${precipitationWeight} ELSE 0 END
-            + CASE WHEN humidity_score IS NOT NULL THEN ${humidityWeight} ELSE 0 END
-            + CASE WHEN wind_score IS NOT NULL THEN ${windWeight} ELSE 0 END
-            + CASE WHEN air_quality_score IS NOT NULL THEN ${airQualityWeight} ELSE 0 END
-          ) AS total_weight,
-          (
-            COALESCE(temperature_score * ${temperatureWeight}, 0)
-            + COALESCE(precipitation_score * ${precipitationWeight}, 0)
-            + COALESCE(humidity_score * ${humidityWeight}, 0)
-            + COALESCE(wind_score * ${windWeight}, 0)
-            + COALESCE(air_quality_score * ${airQualityWeight}, 0)
-          ) AS weighted_total,
-          (
-            COALESCE(temperature_score, 0)
-            + COALESCE(precipitation_score, 0)
-            + COALESCE(humidity_score, 0)
-            + COALESCE(wind_score, 0)
-            + COALESCE(air_quality_score, 0)
-          ) AS component_total,
-          (
-            (temperature_score IS NOT NULL)::int
-            + (precipitation_score IS NOT NULL)::int
-            + (humidity_score IS NOT NULL)::int
-            + (wind_score IS NOT NULL)::int
-            + (air_quality_score IS NOT NULL)::int
-          ) AS component_count
+          ${scoreFromComponents} AS "score"
         FROM components
       )
       SELECT
-        COUNT(*) FILTER (
-          WHERE CASE
-            WHEN component_count = 0 THEN 0
-            WHEN total_weight = 0 THEN ROUND(component_total / component_count)
-            ELSE ROUND(weighted_total / total_weight)
-          END >= 70
-        )::int AS recommended,
-        ROUND(AVG(current_temperature), 1)::double precision AS average_temperature,
+        COUNT(*)::int AS total_count,
+        COUNT(*) FILTER (WHERE "score" >= 70)::int AS recommended,
+        ROUND(AVG("current_temperature"), 1)::double precision AS average_temperature,
         COUNT(snapshot_id)::int AS refreshed
-      FROM weighted
+      FROM scored
     `);
     const summary = rows[0];
     return {
-      recommended: Number(summary?.recommended ?? 0),
-      average_temperature: summary?.average_temperature === null || summary?.average_temperature === undefined ? null : Number(summary.average_temperature),
-      refreshed: Number(summary?.refreshed ?? 0),
+      total_count: Number(summary?.total_count ?? 0),
+      summary: {
+        recommended: Number(summary?.recommended ?? 0),
+        average_temperature: summary?.average_temperature === null || summary?.average_temperature === undefined ? null : Number(summary.average_temperature),
+        refreshed: Number(summary?.refreshed ?? 0),
+      },
     };
+  }
+
+  private async scorePageAndSummary(
+    userId: bigint,
+    keyword: string,
+    favoriteOnly: boolean,
+    page: number,
+    perPage: number,
+    preference: WeatherPreference,
+    descending: boolean,
+  ): Promise<{ cities: CityWithSnapshots[]; metadata: CityListMetadata }> {
+    const order = descending ? Prisma.sql`DESC` : Prisma.sql`ASC`;
+    const keywordPattern = this.ilikePattern(keyword);
+    const scoreComponents = scoreComponentsSqlFor(preference, {
+      temperature: Prisma.sql`latest."current_temperature"`,
+      precipitation: Prisma.sql`latest."precipitation_probability"`,
+      humidity: Prisma.sql`latest."current_humidity"`,
+      wind: Prisma.sql`latest."current_wind_speed"`,
+      airQuality: Prisma.sql`latest."current_us_aqi"`,
+    });
+    const scoreFromComponents = scoreSqlFromComponents(preference, {
+      temperature: Prisma.sql`components."temperature_score"`,
+      precipitation: Prisma.sql`components."precipitation_score"`,
+      humidity: Prisma.sql`components."humidity_score"`,
+      wind: Prisma.sql`components."wind_score"`,
+      air_quality: Prisma.sql`components."air_quality_score"`,
+    });
+    const rows = await this.prisma.$queryRaw<Array<{
+      total_count: number;
+      recommended: number;
+      average_temperature: number | null;
+      refreshed: number;
+      page_id: bigint | null;
+    }>>(Prisma.sql`
+      WITH latest AS (
+        SELECT
+          city."id",
+          snapshot."id" AS snapshot_id,
+          snapshot."current_temperature",
+          snapshot."current_humidity",
+          snapshot."current_wind_speed",
+          snapshot."current_us_aqi",
+          CASE
+            WHEN jsonb_typeof(snapshot."daily_data" -> 'precipitation_probability_max') = 'array'
+              AND jsonb_typeof(snapshot."daily_data" -> 'precipitation_probability_max' -> 0) = 'number'
+            THEN (snapshot."daily_data" -> 'precipitation_probability_max' ->> 0)::double precision
+            ELSE NULL
+          END AS "precipitation_probability"
+        FROM "cities" AS city
+        LEFT JOIN LATERAL (
+          SELECT
+            snapshot."id",
+            snapshot."current_temperature",
+            snapshot."current_humidity",
+            snapshot."current_wind_speed",
+            snapshot."current_us_aqi",
+            snapshot."daily_data"
+          FROM "weather_snapshots" AS snapshot
+          WHERE snapshot."city_id" = city."id"
+          ORDER BY snapshot."fetched_at" DESC
+          LIMIT 1
+        ) AS snapshot ON true
+        WHERE city."user_id" = ${userId}
+          ${favoriteOnly ? Prisma.sql`AND city."favorite" = true` : Prisma.empty}
+          ${keyword ? Prisma.sql`AND (
+            city."name" ILIKE ${keywordPattern}
+            OR city."country" ILIKE ${keywordPattern}
+            OR city."admin1" ILIKE ${keywordPattern}
+            OR city."country_code" ILIKE ${keywordPattern}
+          )` : Prisma.empty}
+      ), components AS (
+        SELECT
+          latest.*,
+          ${scoreComponents.temperature} AS "temperature_score",
+          ${scoreComponents.precipitation} AS "precipitation_score",
+          ${scoreComponents.humidity} AS "humidity_score",
+          ${scoreComponents.wind} AS "wind_score",
+          ${scoreComponents.air_quality} AS "air_quality_score"
+        FROM latest
+      ), scored AS (
+        SELECT
+          components.*,
+          ${scoreFromComponents} AS "score"
+        FROM components
+      ), aggregate_summary AS (
+        SELECT
+          COUNT(*)::int AS total_count,
+          COUNT(*) FILTER (WHERE "score" >= 70)::int AS recommended,
+          ROUND(AVG("current_temperature"), 1)::double precision AS average_temperature,
+          COUNT(snapshot_id)::int AS refreshed
+        FROM scored
+      ), page_ids AS (
+        SELECT
+          "id",
+          ROW_NUMBER() OVER (ORDER BY "score" ${order} NULLS LAST, "id" ASC) AS "position"
+        FROM scored
+        ORDER BY "score" ${order} NULLS LAST, "id" ASC
+        OFFSET ${(page - 1) * perPage}
+        LIMIT ${perPage}
+      )
+      SELECT
+        aggregate_summary.*,
+        page_ids."id" AS page_id
+      FROM aggregate_summary
+      LEFT JOIN page_ids ON true
+      ORDER BY page_ids."position"
+    `);
+    const summary = rows[0];
+    const ids = rows.flatMap((row) => row.page_id === null || row.page_id === undefined ? [] : [row.page_id]);
+    const cities = await this.citiesByIds(userId, ids);
+
+    return {
+      cities,
+      metadata: {
+        total_count: Number(summary?.total_count ?? 0),
+        summary: {
+          recommended: Number(summary?.recommended ?? 0),
+          average_temperature: summary?.average_temperature === null || summary?.average_temperature === undefined ? null : Number(summary.average_temperature),
+          refreshed: Number(summary?.refreshed ?? 0),
+        },
+      },
+    };
+  }
+
+  private async pageByScore(
+    userId: bigint,
+    keyword: string,
+    favoriteOnly: boolean,
+    page: number,
+    perPage: number,
+    preference: WeatherPreference,
+    descending: boolean,
+  ): Promise<CityWithSnapshots[]> {
+    const order = descending ? Prisma.sql`DESC` : Prisma.sql`ASC`;
+    const keywordPattern = this.ilikePattern(keyword);
+    const scoreComponents = scoreComponentsSqlFor(preference, {
+      temperature: Prisma.sql`latest."current_temperature"`,
+      precipitation: Prisma.sql`latest."precipitation_probability"`,
+      humidity: Prisma.sql`latest."current_humidity"`,
+      wind: Prisma.sql`latest."current_wind_speed"`,
+      airQuality: Prisma.sql`latest."current_us_aqi"`,
+    });
+    const scoreFromComponents = scoreSqlFromComponents(preference, {
+      temperature: Prisma.sql`components."temperature_score"`,
+      precipitation: Prisma.sql`components."precipitation_score"`,
+      humidity: Prisma.sql`components."humidity_score"`,
+      wind: Prisma.sql`components."wind_score"`,
+      air_quality: Prisma.sql`components."air_quality_score"`,
+    });
+    const rows = await this.prisma.$queryRaw<Array<{ id: bigint }>>(Prisma.sql`
+      WITH latest AS (
+        SELECT
+          city."id",
+          snapshot."current_temperature",
+          snapshot."current_humidity",
+          snapshot."current_wind_speed",
+          snapshot."current_us_aqi",
+          CASE
+            WHEN jsonb_typeof(snapshot."daily_data" -> 'precipitation_probability_max') = 'array'
+              AND jsonb_typeof(snapshot."daily_data" -> 'precipitation_probability_max' -> 0) = 'number'
+            THEN (snapshot."daily_data" -> 'precipitation_probability_max' ->> 0)::double precision
+            ELSE NULL
+          END AS "precipitation_probability"
+        FROM "cities" AS city
+        LEFT JOIN LATERAL (
+          SELECT
+            snapshot."current_temperature",
+            snapshot."current_humidity",
+            snapshot."current_wind_speed",
+            snapshot."current_us_aqi",
+            snapshot."daily_data"
+          FROM "weather_snapshots" AS snapshot
+          WHERE snapshot."city_id" = city."id"
+          ORDER BY snapshot."fetched_at" DESC
+          LIMIT 1
+        ) AS snapshot ON true
+        WHERE city."user_id" = ${userId}
+          ${favoriteOnly ? Prisma.sql`AND city."favorite" = true` : Prisma.empty}
+          ${keyword ? Prisma.sql`AND (
+            city."name" ILIKE ${keywordPattern}
+            OR city."country" ILIKE ${keywordPattern}
+            OR city."admin1" ILIKE ${keywordPattern}
+            OR city."country_code" ILIKE ${keywordPattern}
+          )` : Prisma.empty}
+      ), components AS (
+        SELECT
+          latest.*,
+          ${scoreComponents.temperature} AS "temperature_score",
+          ${scoreComponents.precipitation} AS "precipitation_score",
+          ${scoreComponents.humidity} AS "humidity_score",
+          ${scoreComponents.wind} AS "wind_score",
+          ${scoreComponents.air_quality} AS "air_quality_score"
+        FROM latest
+      ), scored AS (
+        SELECT
+          components."id",
+          ${scoreFromComponents} AS "score"
+        FROM components
+      )
+      SELECT "id"
+      FROM scored
+      ORDER BY "score" ${order} NULLS LAST, "id" ASC
+      OFFSET ${(page - 1) * perPage}
+      LIMIT ${perPage}
+    `);
+    const ids = rows.map((row) => row.id);
+    return this.citiesByIds(userId, ids);
   }
 
   private async pageByLatestSnapshot(
@@ -275,7 +487,7 @@ export class CitiesQueryService {
   ): Promise<CityWithSnapshots[]> {
     const order = descending ? Prisma.sql`DESC NULLS LAST` : Prisma.sql`ASC NULLS FIRST`;
     const sortColumn = sort === "temperature" ? Prisma.sql`latest."current_temperature"` : Prisma.sql`latest."fetched_at"`;
-    const keywordPattern = `%${keyword}%`;
+    const keywordPattern = this.ilikePattern(keyword);
     const rows = await this.prisma.$queryRaw<Array<{ id: bigint }>>(Prisma.sql`
       SELECT city."id"
       FROM "cities" AS city
@@ -299,6 +511,10 @@ export class CitiesQueryService {
       LIMIT ${perPage}
     `);
     const ids = rows.map((row) => row.id);
+    return this.citiesByIds(userId, ids);
+  }
+
+  private async citiesByIds(userId: bigint, ids: bigint[]): Promise<CityWithSnapshots[]> {
     if (ids.length === 0) return [];
 
     const cities = await this.prisma.city.findMany({ where: { userId, id: { in: ids } }, include: LATEST_CITY_INCLUDE });
@@ -306,15 +522,15 @@ export class CitiesQueryService {
     return cities.sort((left, right) => (positions.get(left.id.toString()) ?? 0) - (positions.get(right.id.toString()) ?? 0));
   }
 
-  private sortValue(city: CityWithSnapshots, preference: WeatherPreference, key: string) {
+  private sortValue(city: CityWithSnapshots, preference: WeatherPreference, key: string): string | number | null {
     if (key === "name") return city.name.toLowerCase();
-    if (key === "temperature") return this.numberOrNull(city.weatherSnapshots[0]?.currentTemperature) ?? Number.NEGATIVE_INFINITY;
-    if (key === "updated_at") return city.weatherSnapshots[0]?.fetchedAt.getTime() ?? Number.NEGATIVE_INFINITY;
+    if (key === "temperature") return this.numberOrNull(city.weatherSnapshots[0]?.currentTemperature);
+    if (key === "updated_at") return city.weatherSnapshots[0]?.fetchedAt.getTime() ?? null;
     return scoreFor(preference, city.weatherSnapshots[0] ?? null);
   }
 
   private average(values: number[]) {
-    return values.length ? Math.round((values.reduce((sum, value) => sum + value, 0) / values.length) * 10) / 10 : 0;
+    return values.length ? Math.round((values.reduce((sum, value) => sum + value, 0) / values.length) * 10) / 10 : null;
   }
 
   private numberOrNull(value: unknown) {

@@ -74,7 +74,7 @@ function CityTable({ cities, page, perPage, totalCount, sort, direction, onSortC
               <TableCell>{formatPercent(probability)}</TableCell>
               <TableCell>{formatPercent(current?.humidity)}</TableCell>
               <TableCell>{formatAqi(current?.us_aqi)}</TableCell>
-              <TableCell><Typography fontWeight={800} color={city.score >= 70 ? "success.main" : city.score >= 50 ? "warning.dark" : "text.primary"}>{city.score}点</Typography></TableCell>
+              <TableCell><Typography fontWeight={800} color={city.score === null ? "text.secondary" : city.score >= 70 ? "success.main" : city.score >= 50 ? "warning.dark" : "text.primary"}>{city.score === null ? "—" : `${city.score}点`}</Typography></TableCell>
               <TableCell><Typography variant="body2">{formatDateTime(city.weather?.fetched_at)}</Typography></TableCell>
               <TableCell onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}><IconButton size="small" aria-label={city.favorite ? `${city.name}${t("weather.table.unfavorite")}` : `${city.name}${t("weather.table.favorite_action")}`} onClick={() => onToggleFavorite(city.id, !city.favorite)} disabled={readOnly || favoriteSavingIds.includes(city.id)} sx={{ color: city.favorite ? "#f2b01e" : "text.disabled", "&:hover": { color: city.favorite ? "#d99400" : "text.secondary" }, "&&.Mui-disabled": { color: city.favorite ? "#f2b01e" : "text.disabled" } }}>{city.favorite ? "★" : "☆"}</IconButton></TableCell>
             </TableRow>;

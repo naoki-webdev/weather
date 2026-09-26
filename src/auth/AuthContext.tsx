@@ -62,10 +62,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signOut = useCallback(async () => {
+    setError(null);
     try {
       await deleteSession();
-    } finally {
       setUser(null);
+    } catch (logoutError) {
+      setError(getApiErrorMessage(logoutError, t("auth.errors.logout")));
     }
   }, []);
 

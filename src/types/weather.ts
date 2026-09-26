@@ -69,7 +69,7 @@ export type City = {
   external_id: string;
   source_name: string;
   favorite: boolean;
-  score: number;
+  score: number | null;
   score_breakdown: WeatherScoreBreakdown;
   score_weights: WeatherScoreWeights;
   score_insight: {
@@ -106,6 +106,7 @@ export type CityListParams = {
   direction?: SortDirection;
   page?: number;
   per_page?: number;
+  include_summary?: boolean;
 };
 
 export type CityListResponse = {
@@ -113,8 +114,8 @@ export type CityListResponse = {
   meta: {
     page: number;
     per_page: number;
-    total_count: number;
-    summary: {
+    total_count?: number;
+    summary?: {
       recommended: number;
       average_temperature: number | null;
       refreshed: number;
@@ -127,7 +128,7 @@ export type CityComparisonResponse = {
   meta: {
     count: number;
     leader_id: number | null;
-    average_score: number;
+    average_score: number | null;
     history_period_days: number;
   };
 };

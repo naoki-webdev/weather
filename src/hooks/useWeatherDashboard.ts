@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useRef } from "react";
 
 import type { City, CitySearchResult, CitySortKey, SortDirection, WeatherPreference } from "../types/weather";
 import { useCitiesList } from "./useCitiesList";
@@ -9,7 +9,13 @@ import { useWeatherPreference } from "./useWeatherPreference";
 
 export function useWeatherDashboard() {
   const citiesList = useCitiesList();
-  const weatherPreference = useWeatherPreference(citiesList.loadCities);
+  const reloadSelectedCityRef = useRef<() => Promise<void>>(async () => undefined);
+  const reloadAfterPreferenceSave = useCallback(async () => {
+    await citiesList.loadCities(true);
+    await reloadSelectedCityRef.current();
+  }, [citiesList.loadCities]);
+  const refreshCitiesWithMetadata = useCallback(() => citiesList.loadCities(true), [citiesList.loadCities]);
+  const weatherPreference = useWeatherPreference(reloadAfterPreferenceSave);
   const cityComparison = useCityComparison(weatherPreference.preference?.updated_at);
   const onCityRemoved = useCallback((cityId: number) => {
     cityComparison.removeCity(cityId);
@@ -19,10 +25,11 @@ export function useWeatherDashboard() {
     cityComparison.replaceCity(updated);
   }, [citiesList.replaceCity, cityComparison.replaceCity]);
   const cityDetail = useCityDetail({
-    refreshCities: citiesList.loadCities,
+    refreshCities: refreshCitiesWithMetadata,
     onCityRemoved,
     onCityUpdated,
   });
+  reloadSelectedCityRef.current = cityDetail.reloadSelectedCity;
   const travel = useTravelPlan(cityComparison.selectedIds);
 
   const toggleFavorite = useCallback(async (cityId: number, favorite: boolean) => {
@@ -31,7 +38,7 @@ export function useWeatherDashboard() {
     citiesList.replaceCity(updated);
     cityDetail.mergeCity(updated);
     cityComparison.replaceCity(updated);
-    await citiesList.loadCities();
+    await citiesList.loadCities(true);
   }, [citiesList.loadCities, citiesList.replaceCity, citiesList.toggleFavorite, cityComparison.replaceCity, cityDetail.mergeCity]);
 
   return {

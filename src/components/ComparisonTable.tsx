@@ -42,7 +42,7 @@ export default function ComparisonTable({ cities, leaderId, historyPeriodDays, l
   if (cities.length === 0) return null;
 
   const rows = [
-    { label: t("weather.comparison.score"), value: (city: City) => <Typography fontWeight={850}>{city.score}点</Typography> },
+    { label: t("weather.comparison.score"), value: (city: City) => <Typography fontWeight={850}>{city.score === null ? "—" : `${city.score}点`}</Typography> },
     { label: t("weather.comparison.temperature"), value: (city: City) => formatTemperature(city.weather?.current.temperature) },
     { label: t("weather.comparison.humidity"), value: (city: City) => formatPercent(city.weather?.current.humidity) },
     { label: t("weather.comparison.rain"), value: (city: City) => formatPercent(latestProbability(city.weather)) },

@@ -7,10 +7,22 @@ import type { City, CityListParams, CitySortKey, SortDirection } from "../types/
 import { isAbortError } from "./requestUtils";
 
 const emptySummary = { recommended: 0, average_temperature: null as number | null, refreshed: 0 };
+type CachedCityMetadata = { totalCount: number; summary: typeof emptySummary };
+const CITY_METADATA_CACHE_LIMIT = 40;
+
+function rememberCityMetadata(cache: Map<string, CachedCityMetadata>, key: string, value: CachedCityMetadata) {
+  if (!cache.has(key) && cache.size >= CITY_METADATA_CACHE_LIMIT) {
+    const oldestKey = cache.keys().next().value;
+    if (oldestKey !== undefined) cache.delete(oldestKey);
+  }
+
+  cache.set(key, value);
+}
 
 export function useCitiesList() {
   const [cities, setCities] = useState<City[]>([]);
   const [keyword, setKeywordState] = useState("");
+  const [debouncedKeyword, setDebouncedKeyword] = useState("");
   const [favoritesOnly, setFavoritesOnly] = useState(false);
   const [sort, setSortState] = useState<CitySortKey>("score");
   const [direction, setDirection] = useState<SortDirection>("desc");
@@ -25,16 +37,24 @@ export function useCitiesList() {
   const citiesRequestController = useRef<AbortController | null>(null);
   const favoriteRequestSequences = useRef(new Map<number, number>());
   const favoriteRequestSequence = useRef(0);
+  const metadataByFilters = useRef(new Map<string, CachedCityMetadata>());
+  const metadataFiltersKey = JSON.stringify({ keyword: debouncedKeyword.trim().toLowerCase(), favoritesOnly });
+  const metadataFiltersKeyRef = useRef(metadataFiltersKey);
+  metadataFiltersKeyRef.current = metadataFiltersKey;
 
   const listParams = useMemo<CityListParams>(
-    () => ({ keyword, favorites_only: favoritesOnly, sort, direction, page, per_page: perPage }),
-    [direction, favoritesOnly, keyword, page, perPage, sort],
+    () => ({ keyword: debouncedKeyword, favorites_only: favoritesOnly, sort, direction, page, per_page: perPage }),
+    [debouncedKeyword, direction, favoritesOnly, page, perPage, sort],
   );
   const listParamsRef = useRef(listParams);
   listParamsRef.current = listParams;
 
-  const loadCities = useCallback(async () => {
+  const loadCities = useCallback(async (refreshMetadata = false) => {
     const currentListParams = listParamsRef.current;
+    if (refreshMetadata) metadataByFilters.current.clear();
+    const currentFiltersKey = metadataFiltersKeyRef.current;
+    const cachedMetadata = metadataByFilters.current.get(currentFiltersKey) ?? null;
+    const includeSummary = refreshMetadata || cachedMetadata === null;
     citiesRequestController.current?.abort();
     const controller = new AbortController();
     citiesRequestController.current = controller;
@@ -43,14 +63,20 @@ export function useCitiesList() {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetchCities(currentListParams, controller.signal);
+      const response = await fetchCities({ ...currentListParams, include_summary: includeSummary }, controller.signal);
       if (requestSequence !== citiesRequestSequence.current) return;
+      const responseMetadata = response.meta.total_count !== undefined && response.meta.summary !== undefined
+        ? { totalCount: response.meta.total_count, summary: response.meta.summary }
+        : cachedMetadata;
+      if (!responseMetadata) throw new Error("City list metadata was not returned.");
+      rememberCityMetadata(metadataByFilters.current, currentFiltersKey, responseMetadata);
+
       setCities(response.cities);
-      setTotalCount(response.meta.total_count);
-      setSummary(response.meta.summary);
+      setTotalCount(responseMetadata.totalCount);
+      setSummary(responseMetadata.summary);
       const currentPage = currentListParams.page ?? 1;
       const currentPerPage = currentListParams.per_page ?? 20;
-      const lastPage = Math.max(1, Math.ceil(response.meta.total_count / currentPerPage));
+      const lastPage = Math.max(1, Math.ceil(responseMetadata.totalCount / currentPerPage));
       if (currentPage > lastPage) {
         setCities([]);
         setPageState(lastPage);
@@ -61,15 +87,22 @@ export function useCitiesList() {
     } finally {
       if (requestSequence === citiesRequestSequence.current) setLoading(false);
     }
-  }, [listParams, page, perPage]);
+  }, [listParams]);
 
   useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedKeyword(keyword), 300);
+    return () => window.clearTimeout(timer);
+  }, [keyword]);
+
+  const keywordSettled = keyword === debouncedKeyword;
+  useEffect(() => {
+    if (!keywordSettled) return;
     void loadCities();
     return () => {
       citiesRequestSequence.current += 1;
       citiesRequestController.current?.abort();
     };
-  }, [loadCities]);
+  }, [keywordSettled, loadCities]);
 
   const replaceCity = useCallback((updated: City) => {
     setCities((current) => current.map((city) => city.id === updated.id ? updated : city));

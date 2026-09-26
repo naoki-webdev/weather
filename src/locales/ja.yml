@@ -34,6 +34,7 @@ ja:
     read_only_help_label: "閲覧専用について"
     errors:
       login: "ログインに失敗しました。"
+      logout: "ログアウトに失敗しました。通信状態を確認して再度お試しください。"
 
   weather:
     app_title: "Weather Compare"

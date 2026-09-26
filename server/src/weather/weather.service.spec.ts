@@ -84,4 +84,64 @@ describe("WeatherService", () => {
     await expect(service.syncCity(city, true)).resolves.toBe(latestAfterFetch);
     expect(transactionSnapshot.create).not.toHaveBeenCalled();
   });
+
+  it("preserves forecast values and updates air quality when the forecast endpoint fails", async () => {
+    const latest = {
+      id: 1n,
+      fetchedAt: new Date(Date.now() - 60 * 60_000),
+      currentTemperature: 19,
+      currentHumidity: 45,
+      currentPrecipitation: 0,
+      currentWindSpeed: 4,
+      currentWeatherCode: 1,
+      currentUsAqi: 30,
+      currentPm25: 10,
+      currentPm10: 15,
+      dailyData: { precipitation_probability_max: [5] },
+    };
+    const create = jest.fn().mockImplementation(({ data }) => data);
+    const transactionSnapshot = { findFirst: jest.fn().mockResolvedValue(latest), create };
+    const prisma = {
+      weatherSnapshot: { findFirst: jest.fn().mockResolvedValue(latest) },
+      $transaction: jest.fn(async (callback: (database: unknown) => unknown) => callback({
+        $queryRaw: jest.fn().mockResolvedValue([]),
+        weatherSnapshot: transactionSnapshot,
+      })),
+    } as unknown as PrismaService;
+    const client = { weatherFor: jest.fn().mockResolvedValue({ forecast: null, airQuality: { current: { us_aqi: 12, pm2_5: 4, pm10: 8 } } }) } as unknown as WeatherClient;
+
+    await new WeatherService(prisma, client).syncCity(city, true);
+
+    expect(create).toHaveBeenCalledWith({ data: expect.objectContaining({
+      currentTemperature: 19,
+      currentUsAqi: 12,
+      currentPm25: 4,
+      dailyData: latest.dailyData,
+    }) });
+  });
+
+  it("syncs cities with bounded concurrency", async () => {
+    const cities = Array.from({ length: 12 }, (_, index) => ({ id: BigInt(index + 1) } as City));
+    const prisma = {
+      city: { findMany: jest.fn().mockResolvedValue(cities) },
+      weatherSnapshot: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
+      $queryRaw: jest.fn().mockResolvedValue([{ name: "weather-sync" }]),
+      $executeRaw: jest.fn().mockResolvedValue(1),
+    } as unknown as PrismaService;
+    const service = new WeatherService(prisma, {} as WeatherClient);
+    let active = 0;
+    let maximumActive = 0;
+    const syncCity = jest.spyOn(service, "syncCity").mockImplementation(async () => {
+      active += 1;
+      maximumActive = Math.max(maximumActive, active);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      active -= 1;
+      return {} as never;
+    });
+
+    await expect(service.syncAll()).resolves.toBe(true);
+
+    expect(syncCity).toHaveBeenCalledTimes(cities.length);
+    expect(maximumActive).toBe(5);
+  });
 });
