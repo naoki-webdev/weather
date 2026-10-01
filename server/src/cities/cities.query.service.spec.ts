@@ -192,9 +192,13 @@ describe("CitiesQueryService", () => {
       weatherSnapshots: [],
     };
     const findMany = jest.fn().mockResolvedValue([city]);
-    const queryRaw = jest.fn()
-      .mockResolvedValueOnce([{ recommended: 1, average_temperature: 20, refreshed: 2 }])
-      .mockResolvedValueOnce([{ id: 2n }]);
+    const queryRaw = jest.fn().mockResolvedValueOnce([{
+      total_count: 2,
+      recommended: 1,
+      average_temperature: 20,
+      refreshed: 2,
+      page_id: 2n,
+    }]);
     const prisma = {
       city: { count: jest.fn().mockResolvedValue(2), findMany },
       $queryRaw: queryRaw,
@@ -202,13 +206,17 @@ describe("CitiesQueryService", () => {
     const weatherPreferenceService = { preferenceFor: jest.fn().mockResolvedValue(preference) } as unknown as WeatherPreferenceService;
     const service = new CitiesQueryService(prisma, weatherPreferenceService);
 
-    await service.list(99n, { sort: "score", direction: "desc", page: "2", per_page: "1" });
+    const result = await service.list(99n, { sort: "score", direction: "desc", page: "2", per_page: "1" });
 
-    expect(queryRaw).toHaveBeenCalledTimes(2);
-    const pageQuery = queryRaw.mock.calls[1][0] as { sql: string };
+    expect(queryRaw).toHaveBeenCalledTimes(1);
+    const pageQuery = queryRaw.mock.calls[0][0] as { sql: string };
     expect(pageQuery.sql).toContain('ORDER BY "score" DESC');
+    expect(pageQuery.sql).toContain("aggregate_summary");
+    expect(pageQuery.sql).toContain("COUNT(*)::int AS total_count");
     expect(pageQuery.sql).toContain("OFFSET");
     expect(pageQuery.sql).toContain("LIMIT");
+    expect(result.meta.total_count).toBe(2);
+    expect(result.meta.summary).toEqual({ recommended: 1, average_temperature: 20, refreshed: 2 });
     expect(findMany).toHaveBeenCalledWith(expect.objectContaining({
       where: { userId: 99n, id: { in: [2n] } },
     }));

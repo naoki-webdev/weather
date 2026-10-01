@@ -28,20 +28,27 @@ function numericParameter(value: unknown) {
   return Number.isFinite(numericValue) ? Prisma.sql`${numericValue}` : Prisma.sql`NULL`;
 }
 
+function doublePrecisionExpression(expression: Prisma.Sql) {
+  return Prisma.sql`CAST(${expression} AS double precision)`;
+}
+
 function scoreFromDifference(value: Prisma.Sql, target: Prisma.Sql, penalty: number) {
+  const numericValue = doublePrecisionExpression(value);
+  const numericTarget = doublePrecisionExpression(target);
   return Prisma.sql`
     CASE
-      WHEN ${value} IS NULL OR ${target} IS NULL THEN NULL
-      ELSE GREATEST(ROUND(CAST(${MAX_SCORE} - ABS(${value} - ${target}) * ${penalty} AS numeric)), 0)
+      WHEN ${numericValue} IS NULL OR ${numericTarget} IS NULL THEN NULL
+      ELSE GREATEST(ROUND(CAST(${MAX_SCORE} - ABS(${numericValue} - ${numericTarget}) * ${penalty} AS numeric)), 0)
     END
   `;
 }
 
 function scoreFromPenalty(value: Prisma.Sql, penalty: number) {
+  const numericValue = doublePrecisionExpression(value);
   return Prisma.sql`
     CASE
-      WHEN ${value} IS NULL THEN NULL
-      ELSE GREATEST(ROUND(CAST(${MAX_SCORE} - ${value} * ${penalty} AS numeric)), 0)
+      WHEN ${numericValue} IS NULL THEN NULL
+      ELSE GREATEST(ROUND(CAST(${MAX_SCORE} - ${numericValue} * ${penalty} AS numeric)), 0)
     END
   `;
 }
