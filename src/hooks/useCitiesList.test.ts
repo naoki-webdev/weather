@@ -67,6 +67,7 @@ describe("useCitiesList", () => {
     const oldLoad = result.current.loadCities;
 
     act(() => result.current.setKeyword("京都"));
+    await waitFor(() => expect(result.current.listParams.keyword).toBe("京都"));
     await act(async () => {
       await oldLoad();
     });
