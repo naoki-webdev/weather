@@ -19,13 +19,9 @@ password: password
 
 デモユーザーは閲覧専用。検索、絞り込み、比較、詳細表示、CSV出力を利用可能。
 
-## 画面
+## 画面（PC）
 
-| 都市比較 | 都市詳細 |
-| --- | --- |
-| ![都市ランキングと比較一覧](docs/screenshots/weather-dashboard-overview.png) | ![都市詳細と7日間予報](docs/screenshots/weather-city-detail.png) |
-
-![モバイル表示](docs/screenshots/weather-dashboard-mobile.png)
+![PC版の都市ランキングと比較一覧](docs/screenshots/weather-dashboard-overview.png)
 
 ## 主な機能
 
