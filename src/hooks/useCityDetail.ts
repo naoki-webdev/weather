@@ -53,10 +53,25 @@ export function useCityDetail({ refreshCities, onCityRemoved, onCityUpdated }: U
   }, []);
 
   useEffect(() => {
-    if (detailId === null) { detailRequestController.current?.abort(); detailRequestSequence.current += 1; setDetailOpen(false); return; }
+    if (detailId === null) { setDetailOpen(false); return; }
     if (selectedCityRef.current?.id !== detailId) void openCity(detailId);
     else setDetailOpen(true);
   }, [detailId, openCity]);
+
+  const historyDetailRef = useRef(detailId);
+  historyDetailRef.current = detailId;
+  useEffect(() => {
+    const navigate = () => {
+      let next: number | null = null;
+      try {
+        const value: unknown = JSON.parse(new URL(window.location.href).searchParams.get("city") ?? "null");
+        if (typeof value === "number" && Number.isSafeInteger(value) && value > 0) next = value;
+      } catch { /* 不正なIDは閉じた状態 */ }
+      if (next !== historyDetailRef.current) { detailRequestController.current?.abort(); detailRequestSequence.current += 1; }
+    };
+    window.addEventListener("popstate",navigate);
+    return () => window.removeEventListener("popstate",navigate);
+  }, []);
 
   const undoDelete = useCallback(async () => {
     if (deletedCityId === null) return;

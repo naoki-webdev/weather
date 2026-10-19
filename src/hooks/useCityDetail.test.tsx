@@ -132,6 +132,18 @@ describe("useCityDetail", () => {
     expect(result.current.detailOpen).toBe(false);
   });
 
+  test("cancels a refresh when browser history closes the detail", async () => {
+    const pending = deferred<City>();
+    vi.mocked(fetchCity).mockResolvedValueOnce(city(1));
+    vi.mocked(syncCity).mockReturnValue(pending.promise);
+    const { result } = renderHook(() => useCityDetail(options()));
+    await act(async () => { await result.current.openCity(1); });
+    act(() => { void result.current.refreshCity(); window.history.replaceState(null, "", "/"); window.dispatchEvent(new PopStateEvent("popstate")); });
+    await act(async () => { pending.resolve({ ...city(1), score:99 }); await pending.promise; });
+    expect(result.current.detailOpen).toBe(false);
+    expect(result.current.selectedCity?.score).not.toBe(99);
+  });
+
   test("ignores a refresh response after another city is opened", async () => {
     const refresh = deferred<City>();
     vi.mocked(fetchCity).mockResolvedValueOnce(city(1)).mockResolvedValueOnce(city(2));
