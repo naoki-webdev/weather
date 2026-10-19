@@ -134,3 +134,15 @@ describe("TravelService", () => {
     expect(result?.recommended?.departure_at).toBe("2026-08-20T08:15:00.000Z");
   });
 });
+
+describe("departure criteria", () => {
+  it("can rank by heat instead of precipitation and rejects unknown criteria", async () => {
+    const prisma = { city:{ findMany:jest.fn().mockResolvedValue([{ id:1n,name:"A",timezone:"Asia/Tokyo" },{ id:2n,name:"B",timezone:"Asia/Tokyo" }]) } } as unknown as PrismaService;
+    const route = { routeFor:jest.fn().mockResolvedValue({ durationSeconds:3600,distanceMeters:1000 }) } as unknown as RouteClient;
+    const weather = { hourlyWeatherFor:jest.fn().mockResolvedValueOnce({ temperature:35,precipitation_probability:0,wind_speed:1 }).mockResolvedValueOnce({ temperature:25,precipitation_probability:60,wind_speed:10 }) } as unknown as WeatherClient;
+    const service = new TravelService(prisma,route,weather);
+    const result = await service.bestDeparture(1n,1n,2n,"2026-10-19T00:00:00Z","2026-10-19T00:15:00Z",15,"heat");
+    expect(result?.recommended?.departure_at).toBe("2026-10-19T00:15:00.000Z");
+    await expect(service.bestDeparture(1n,1n,2n,"2026-10-19T00:00:00Z","2026-10-19T00:15:00Z",15,"unknown" as "rain")).rejects.toThrow("評価基準");
+  });
+});

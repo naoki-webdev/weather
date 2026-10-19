@@ -162,7 +162,7 @@ describe("CitiesQueryService", () => {
     const pageQuery = queryRaw.mock.calls[1][0] as { sql: string };
     expect(pageQuery.sql).toContain('SELECT snapshot."fetched_at", snapshot."current_temperature"');
     expect(findMany).toHaveBeenCalledWith(expect.objectContaining({
-      where: { userId: 99n, id: { in: [2n] } },
+      where: { userId: 99n, deletedAt: null, id: { in: [2n] } },
     }));
   });
 
@@ -218,7 +218,7 @@ describe("CitiesQueryService", () => {
     expect(result.meta.total_count).toBe(2);
     expect(result.meta.summary).toEqual({ recommended: 1, average_temperature: 20, refreshed: 2 });
     expect(findMany).toHaveBeenCalledWith(expect.objectContaining({
-      where: { userId: 99n, id: { in: [2n] } },
+      where: { userId: 99n, deletedAt: null, id: { in: [2n] } },
     }));
   });
 });

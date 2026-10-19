@@ -42,6 +42,9 @@ export function useWeatherDashboard() {
   }, [citiesList.loadCities, citiesList.replaceCity, citiesList.toggleFavorite, cityComparison.replaceCity, cityDetail.mergeCity]);
 
   return {
+    selectComparison: cityComparison.selectComparison,
+    deletedCityId: cityDetail.deletedCityId,
+    undoDelete: cityDetail.undoDelete,
     cities: citiesList.cities,
     selectedCity: cityDetail.selectedCity,
     keyword: citiesList.keyword,

@@ -58,7 +58,7 @@ export function useTravelPlan(selectedIds: number[]) {
     }
   }, [selectedIds]);
 
-  const planBestDeparture = useCallback(async (windowStart: string, windowEnd: string, intervalMinutes = 15) => {
+  const planBestDeparture = useCallback(async (windowStart: string, windowEnd: string, intervalMinutes = 15, criterion?: string) => {
     if (selectedIds.length !== 2) return;
     bestDepartureRequestController.current?.abort();
     const controller = new AbortController();
@@ -68,7 +68,7 @@ export function useTravelPlan(selectedIds: number[]) {
     setBestDeparturePlan(null);
     setBestDepartureError(null);
     try {
-      const response = await fetchBestDeparturePlan(selectedIds[0], selectedIds[1], windowStart, windowEnd, intervalMinutes, controller.signal);
+      const response = await fetchBestDeparturePlan(selectedIds[0], selectedIds[1], windowStart, windowEnd, intervalMinutes, controller.signal, ...(criterion ? [criterion] : []));
       if (!controller.signal.aborted && requestSequence === bestDepartureRequestSequence.current) setBestDeparturePlan(response);
     } catch (requestError) {
       if (!controller.signal.aborted && requestSequence === bestDepartureRequestSequence.current) {

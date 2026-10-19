@@ -4,10 +4,11 @@ import { compareCities } from "../api/cityRequests";
 import { getApiErrorMessage } from "../api/client";
 import { t } from "../i18n";
 import type { City, CityComparisonResponse } from "../types/weather";
+import { useQueryState } from "./useQueryState";
 import { isAbortError } from "./requestUtils";
 
 export function useCityComparison(preferenceUpdatedAt?: string) {
-  const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  const [selectedIds, setSelectedIds] = useQueryState<number[]>("compare", [], (v): v is number[] => Array.isArray(v) && v.length <= 4 && new Set(v).size === v.length && v.every((id) => Number.isSafeInteger(id) && id > 0));
   const [comparison, setComparison] = useState<{ cities: City[]; meta: CityComparisonResponse["meta"] | null }>({ cities: [], meta: null });
   const [comparisonLoading, setComparisonLoading] = useState(false);
   const [comparisonError, setComparisonError] = useState<string | null>(null);
@@ -79,6 +80,7 @@ export function useCityComparison(preferenceUpdatedAt?: string) {
   }, []);
 
   return {
+    selectComparison: setSelectedIds,
     selectedIds,
     comparisonCities: comparison.cities,
     comparisonMeta: comparison.meta,

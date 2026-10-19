@@ -27,7 +27,7 @@ type CityComparisonPanelProps = {
   bestDeparturePlan: BestDeparturePlan | null;
   bestDepartureLoading: boolean;
   bestDepartureError: string | null;
-  onPlanBestDeparture: (windowStart: string, windowEnd: string) => void;
+  onPlanBestDeparture: (windowStart: string, windowEnd: string, criterion?: string) => void;
 };
 
 export default function CityComparisonPanel({ selectedCount, cities, leaderId, averageScore, historyPeriodDays, loading, error, onRemove, onClear, onPlanTravel, travelPlan, travelLoading, travelError, bestDeparturePlan, bestDepartureLoading, bestDepartureError, onPlanBestDeparture }: CityComparisonPanelProps) {

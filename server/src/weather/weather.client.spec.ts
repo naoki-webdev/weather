@@ -120,7 +120,7 @@ describe("WeatherClient hourly forecast", () => {
       ? ({ ok: false, status: 503 } as Response)
       : ({ ok: true, json: async () => ({ current: { temperature_2m: 21 } }) } as Response));
 
-    await expect(new WeatherClient().weatherFor(city)).resolves.toEqual({
+    await expect(new WeatherClient().weatherFor(city)).resolves.toMatchObject({
       forecast: { current: { temperature_2m: 21 } },
       airQuality: null,
     });

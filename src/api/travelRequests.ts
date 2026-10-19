@@ -7,7 +7,7 @@ export async function fetchTravelPlan(fromId: number, toId: number, departureAt?
   return requestJson<TravelPlan>(`${API_BASE_URL}/api/travel/plan?${params.toString()}`, { signal });
 }
 
-export async function fetchBestDeparturePlan(fromId: number, toId: number, windowStart: string, windowEnd: string, intervalMinutes = 15, signal?: AbortSignal): Promise<BestDeparturePlan> {
+export async function fetchBestDeparturePlan(fromId: number, toId: number, windowStart: string, windowEnd: string, intervalMinutes = 15, signal?: AbortSignal, criterion?: string): Promise<BestDeparturePlan> {
   const params = new URLSearchParams({
     from_id: String(fromId),
     to_id: String(toId),
@@ -15,5 +15,6 @@ export async function fetchBestDeparturePlan(fromId: number, toId: number, windo
     window_end: windowEnd,
     interval_minutes: String(intervalMinutes),
   });
+  if (criterion) params.set("criterion", criterion);
   return requestJson<BestDeparturePlan>(`${API_BASE_URL}/api/travel/best-departure?${params.toString()}`, { signal });
 }

@@ -1,3 +1,5 @@
+import WeatherWindows from "./WeatherWindows";
+import WeatherDataQuality from "./WeatherDataQuality";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Divider from "@mui/material/Divider";
@@ -102,6 +104,8 @@ export default function CityDetailDrawer({ open, city, readOnly, saving, onClose
             <Typography variant="h3" fontWeight={850} sx={{ mt: 0.25 }}>{formatTemperature(current?.temperature)}</Typography>
             <Typography variant="body2">{weatherCodeLabel(current?.weather_code)}</Typography>
             <Typography variant="caption" color="text.secondary">{t("weather.detail.updated_at", { value: formatDateTime(weather?.fetched_at) })}</Typography>
+            <WeatherDataQuality city={city} />
+            <WeatherWindows cityId={city.id} />
           </Box>
           <MetricGrid items={[
             { label: t("weather.detail.humidity"), value: formatPercent(current?.humidity) },

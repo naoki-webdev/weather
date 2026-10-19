@@ -85,6 +85,8 @@ export class WeatherClient {
     }
 
     return {
+      forecastFetchedAt: forecastResult.status === "fulfilled" ? new Date((this.cache.get("forecast:" + coordinates)?.expiresAt ?? Date.now() + 15 * 60_000) - 15 * 60_000) : null,
+      airQualityFetchedAt: airQualityResult.status === "fulfilled" ? new Date((this.cache.get("air-quality:" + coordinates)?.expiresAt ?? Date.now() + 15 * 60_000) - 15 * 60_000) : null,
       forecast: forecastResult.status === "fulfilled" ? forecastResult.value : null,
       airQuality: airQualityResult.status === "fulfilled" ? airQualityResult.value : null,
     };

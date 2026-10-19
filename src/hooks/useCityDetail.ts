@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { getApiErrorMessage } from "../api/client";
+import { API_BASE_URL, requestJson, getApiErrorMessage } from "../api/client";
 import { createCity, deleteCity, fetchCity, syncCity } from "../api/cityRequests";
 import { t } from "../i18n";
 import type { City, CitySearchResult } from "../types/weather";
+import { useQueryState } from "./useQueryState";
 import { isAbortError } from "./requestUtils";
 
 type UseCityDetailOptions = {
@@ -13,7 +14,11 @@ type UseCityDetailOptions = {
 };
 
 export function useCityDetail({ refreshCities, onCityRemoved, onCityUpdated }: UseCityDetailOptions) {
+  const [detailId, setDetailId] = useQueryState<number | null>("city", null, (v): v is number | null => v === null || typeof v === "number" && Number.isSafeInteger(v) && v > 0);
+  const selectedCityRef = useRef<City | null>(null);
+  const [deletedCityId, setDeletedCityId] = useState<number | null>(null);
   const [selectedCity, setSelectedCity] = useState<City | null>(null);
+  selectedCityRef.current = selectedCity;
   const [detailOpen, setDetailOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -36,6 +41,7 @@ export function useCityDetail({ refreshCities, onCityRemoved, onCityUpdated }: U
     try {
       const city = await fetchCity(id, controller.signal);
       if (controller.signal.aborted || requestSequence !== detailRequestSequence.current) return;
+      setDetailId(id);
       setSelectedCity(city);
       setDetailOpen(true);
       setError(null);
@@ -46,6 +52,21 @@ export function useCityDetail({ refreshCities, onCityRemoved, onCityUpdated }: U
     }
   }, []);
 
+  useEffect(() => {
+    if (detailId === null) { setDetailOpen(false); return; }
+    if (selectedCityRef.current?.id !== detailId) void openCity(detailId);
+    else setDetailOpen(true);
+  }, [detailId, openCity]);
+
+  const undoDelete = useCallback(async () => {
+    if (deletedCityId === null) return;
+    try {
+      await requestJson<City>(API_BASE_URL + "/api/cities/" + deletedCityId + "/restore", { method: "POST", body: "{}" });
+      setDeletedCityId(null);
+      await refreshCities();
+    } catch { setError("復元期限を過ぎたか、復元に失敗しました。"); }
+  }, [deletedCityId, refreshCities]);
+
   const addCity = useCallback(async (city: CitySearchResult) => {
     detailRequestController.current?.abort();
     detailRequestController.current = null;
@@ -55,6 +76,7 @@ export function useCityDetail({ refreshCities, onCityRemoved, onCityUpdated }: U
     try {
       const created = await createCity(city);
       if (requestSequence === detailRequestSequence.current) {
+        setDetailId(created.id);
         setSelectedCity(created);
         setSearchOpen(false);
         setDetailOpen(true);
@@ -123,6 +145,8 @@ export function useCityDetail({ refreshCities, onCityRemoved, onCityUpdated }: U
     setSaving(true);
     try {
       await deleteCity(cityId);
+      setDeletedCityId(cityId);
+      if (selectedCityRef.current?.id === cityId) setDetailId(null);
       onCityRemoved(cityId);
       if (requestSequence === detailRequestSequence.current) {
         setDetailOpen(false);
@@ -144,6 +168,7 @@ export function useCityDetail({ refreshCities, onCityRemoved, onCityUpdated }: U
   }, []);
 
   const closeDetail = useCallback(() => {
+    setDetailId(null);
     detailRequestController.current?.abort();
     detailRequestController.current = null;
     detailRequestSequence.current += 1;
@@ -153,6 +178,8 @@ export function useCityDetail({ refreshCities, onCityRemoved, onCityUpdated }: U
   }, []);
 
   return {
+    deletedCityId,
+    undoDelete,
     selectedCity,
     detailOpen,
     searchOpen,

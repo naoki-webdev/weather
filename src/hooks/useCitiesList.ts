@@ -4,6 +4,7 @@ import { getApiErrorMessage } from "../api/client";
 import { downloadCitiesCsv, fetchCities, updateCityFavorite } from "../api/cityRequests";
 import { t } from "../i18n";
 import type { City, CityListParams, CitySortKey, SortDirection } from "../types/weather";
+import { useQueryState } from "./useQueryState";
 import { isAbortError } from "./requestUtils";
 
 const emptySummary = { recommended: 0, average_temperature: null as number | null, refreshed: 0 };
@@ -21,13 +22,13 @@ function rememberCityMetadata(cache: Map<string, CachedCityMetadata>, key: strin
 
 export function useCitiesList() {
   const [cities, setCities] = useState<City[]>([]);
-  const [keyword, setKeywordState] = useState("");
+  const [keyword, setKeywordState] = useQueryState("keyword", "", (v): v is string => typeof v === "string" && v.length <= 2000);
   const [debouncedKeyword, setDebouncedKeyword] = useState("");
-  const [favoritesOnly, setFavoritesOnly] = useState(false);
-  const [sort, setSortState] = useState<CitySortKey>("score");
-  const [direction, setDirection] = useState<SortDirection>("desc");
-  const [page, setPageState] = useState(1);
-  const [perPage, setPerPageState] = useState(20);
+  const [favoritesOnly, setFavoritesOnly] = useQueryState("favorites", false, (v): v is boolean => typeof v === "boolean");
+  const [sort, setSortState] = useQueryState<CitySortKey>("sort", "score", (v): v is CitySortKey => typeof v === "string" && ["score","name","temperature","updated_at"].includes(v));
+  const [direction, setDirection] = useQueryState<SortDirection>("direction", "desc", (v): v is SortDirection => v === "asc" || v === "desc");
+  const [page, setPageState] = useQueryState("page", 1, (v): v is number => typeof v === "number" && Number.isSafeInteger(v) && v > 0);
+  const [perPage, setPerPageState] = useQueryState("per_page", 20, (v): v is number => typeof v === "number" && [10,20,50,100].includes(v));
   const [totalCount, setTotalCount] = useState(0);
   const [summary, setSummary] = useState(emptySummary);
   const [loading, setLoading] = useState(true);

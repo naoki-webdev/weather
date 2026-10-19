@@ -11,11 +11,11 @@ describe("CitiesService activity transactions", () => {
   it("deletes a city and writes its activity log in the same transaction", async () => {
     const city = { id: 7n, name: "東京" } as City;
     type TransactionDatabase = {
-      city: { delete: jest.Mock };
+      city: { update: jest.Mock };
       activityLog: { create: jest.Mock };
     };
     const database: TransactionDatabase = {
-      city: { delete: jest.fn().mockResolvedValue(city) },
+      city: { update: jest.fn().mockResolvedValue(city) },
       activityLog: { create: jest.fn().mockResolvedValue(undefined) },
     };
     const prisma = {
@@ -33,7 +33,7 @@ describe("CitiesService activity transactions", () => {
     await expect(service.remove(99n, city.id)).resolves.toBe(true);
 
     expect(prisma.$transaction).toHaveBeenCalledTimes(1);
-    expect(database.city.delete).toHaveBeenCalledWith({ where: { id: city.id } });
+    expect(database.city.update).toHaveBeenCalledWith({ where: { id: city.id }, data: { deletedAt: expect.any(Date) } });
     expect(database.activityLog.create).toHaveBeenCalledWith({
       data: expect.objectContaining({ action: "city.destroy", resourceId: city.id }),
     });

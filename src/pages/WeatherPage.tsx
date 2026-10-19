@@ -1,3 +1,5 @@
+import CityGroups from "../components/CityGroups";
+import Button from "@mui/material/Button";
 import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
 import Container from "@mui/material/Container";
@@ -36,7 +38,9 @@ export default function WeatherPage() {
             <Link href="https://open-meteo.com/" target="_blank" rel="noreferrer" underline="hover" variant="caption" color="text.secondary" sx={{ whiteSpace: "nowrap" }}>{t("weather.source")}</Link>
           </Box>
           <WeatherSummary total={dashboard.totalCount} recommended={dashboard.summary.recommended} averageTemperature={dashboard.summary.average_temperature} refreshed={dashboard.summary.refreshed} />
-          <CityComparisonPanel selectedCount={dashboard.selectedIds.length} cities={dashboard.comparisonCities} leaderId={dashboard.comparisonMeta?.leader_id ?? null} averageScore={dashboard.comparisonMeta?.average_score ?? null} historyPeriodDays={dashboard.comparisonMeta?.history_period_days ?? 30} loading={dashboard.comparisonLoading} error={dashboard.comparisonError} onRemove={dashboard.removeComparisonCity} onClear={dashboard.clearComparison} onPlanTravel={(departureAt) => void dashboard.planTravel(departureAt)} travelPlan={dashboard.travelPlan} travelLoading={dashboard.travelLoading} travelError={dashboard.travelError} bestDeparturePlan={dashboard.bestDeparturePlan} bestDepartureLoading={dashboard.bestDepartureLoading} bestDepartureError={dashboard.bestDepartureError} onPlanBestDeparture={(windowStart, windowEnd) => void dashboard.planBestDeparture(windowStart, windowEnd)} />
+          {dashboard.deletedCityId && <Alert severity="info" action={<Button onClick={() => void dashboard.undoDelete()}>元に戻す</Button>}>都市を削除しました。30秒以内なら復元できます。</Alert>}
+          <CityGroups owner={user?.id} ids={dashboard.selectedIds} onApply={dashboard.selectComparison} />
+          <CityComparisonPanel selectedCount={dashboard.selectedIds.length} cities={dashboard.comparisonCities} leaderId={dashboard.comparisonMeta?.leader_id ?? null} averageScore={dashboard.comparisonMeta?.average_score ?? null} historyPeriodDays={dashboard.comparisonMeta?.history_period_days ?? 30} loading={dashboard.comparisonLoading} error={dashboard.comparisonError} onRemove={dashboard.removeComparisonCity} onClear={dashboard.clearComparison} onPlanTravel={(departureAt) => void dashboard.planTravel(departureAt)} travelPlan={dashboard.travelPlan} travelLoading={dashboard.travelLoading} travelError={dashboard.travelError} bestDeparturePlan={dashboard.bestDeparturePlan} bestDepartureLoading={dashboard.bestDepartureLoading} bestDepartureError={dashboard.bestDepartureError} onPlanBestDeparture={(windowStart, windowEnd, criterion) => void dashboard.planBestDeparture(windowStart, windowEnd, 15, criterion)} />
           <Box component="section" sx={{ py: 0.5, borderBottom: "1px solid rgba(9,30,66,0.12)" }}>
             <Stack spacing={1.25}><Typography variant="h5" sx={{ mb: 0.25, fontSize: { xs: "1.2rem", md: "1.35rem" } }}>{t("weather.section_title")}</Typography><CityFilters keyword={dashboard.keyword} favoritesOnly={dashboard.favoritesOnly} onKeywordChange={dashboard.setKeyword} onFavoritesOnlyChange={dashboard.setFavoritesOnly} onClear={dashboard.clearFilters} onExport={() => void dashboard.exportCsv()} /></Stack>
           </Box>

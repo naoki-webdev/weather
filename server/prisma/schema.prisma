@@ -48,6 +48,7 @@ model WeatherSyncLock {
 }
 
 model City {
+  deletedAt DateTime? @db.Timestamp(6) @map("deleted_at")
   id               BigInt            @id @default(autoincrement()) @db.BigInt
   userId           BigInt            @db.BigInt @map("user_id")
   name             String
@@ -68,12 +69,17 @@ model City {
   @@unique([userId, externalId])
   @@index([userId, favorite])
   @@index([userId, name])
+  @@index([userId, deletedAt], map: "cities_user_deleted_idx")
   @@map("cities")
 }
 
 model WeatherSnapshot {
   id                    BigInt   @id @default(autoincrement()) @db.BigInt
   cityId                BigInt   @db.BigInt @map("city_id")
+  forecastSyncFailed    Boolean @default(false) @map("forecast_sync_failed")
+  airQualitySyncFailed  Boolean @default(false) @map("air_quality_sync_failed")
+  forecastFetchedAt     DateTime? @db.Timestamp(6) @map("forecast_fetched_at")
+  airQualityFetchedAt   DateTime? @db.Timestamp(6) @map("air_quality_fetched_at")
   fetchedAt             DateTime @db.Timestamp(6) @map("fetched_at")
   currentTemperature    Decimal? @map("current_temperature") @db.Decimal(5, 2)
   currentHumidity       Int?     @map("current_humidity")

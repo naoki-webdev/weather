@@ -98,6 +98,18 @@ export class CitiesController {
     response.send(csv);
   }
 
+  @Get(":id/windows")
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  async windows(@Req() request: AuthenticatedRequest, @Param("id") id: string, @Query() query: Record<string,string | undefined>) {
+    const rain = Number(query.rain ?? 20), temperature = Number(query.temperature ?? 25), wind = Number(query.wind ?? 20);
+    if (![rain,temperature,wind].every(Number.isFinite) || rain < 0 || rain > 100 || temperature < -60 || temperature > 60 || wind < 0 || wind > 200) throw new HttpException({ errors: ["外出条件の値が正しくありません。"] }, HttpStatus.BAD_REQUEST);
+    try {
+      const result = await this.citiesService.weatherWindows(request.user.id,this.parseId(id),rain,temperature,wind);
+      if (!result) throw new HttpException({ errors: ["都市が見つかりません。"] }, HttpStatus.NOT_FOUND);
+      return result;
+    } catch (error) { this.handleExternalError(error); }
+  }
+
   @Get(":id")
   async show(@Req() request: AuthenticatedRequest, @Param("id") id: string) {
     const city = await this.citiesService.findOne(request.user.id, this.parseId(id), true);
@@ -122,6 +134,13 @@ export class CitiesController {
   @HttpCode(HttpStatus.NO_CONTENT)
   async destroy(@Req() request: AuthenticatedRequest, @Param("id") id: string) {
     if (!(await this.citiesService.remove(request.user.id, this.parseId(id)))) throw new HttpException({ errors: ["都市が見つかりません。"] }, HttpStatus.NOT_FOUND);
+  }
+
+  @Post(":id/restore")
+  async restore(@Req() request: AuthenticatedRequest, @Param("id") id: string) {
+    const city = await this.citiesService.restore(request.user.id, this.parseId(id));
+    if (!city) throw new HttpException({ errors: ["復元期限を過ぎたか、都市が見つかりません。"] }, HttpStatus.NOT_FOUND);
+    return city;
   }
 
   @Post(":id/sync")

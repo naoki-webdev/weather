@@ -45,7 +45,9 @@ export class TravelService {
     windowStart: string | Date,
     windowEnd: string | Date,
     intervalMinutes = 15,
+    criterion: "rain" | "heat" | "wind" = "rain",
   ) {
+    if (!["rain", "heat", "wind"].includes(criterion)) throw new TravelInputError("評価基準が正しくありません。");
     const context = await this.travelContext(userId, fromId, toId);
     if (!context) return null;
     const departureWindowStart = parseTravelDateTime(windowStart, context.from.timezone);
@@ -79,7 +81,7 @@ export class TravelService {
         departure_at: departureAt.toISOString(),
         arrival_at: arrivalAt.toISOString(),
         arrival_weather: arrivalWeather,
-        weather_score: this.weatherScore(arrivalWeather?.precipitation_probability ?? null),
+        weather_score: this.criterionScore(arrivalWeather, criterion),
         recommendation: this.recommendation(arrivalWeather?.precipitation_probability ?? null),
       });
     }
@@ -100,18 +102,27 @@ export class TravelService {
       interval_minutes: intervalMinutes,
       recommended,
       candidates,
-      reason: recommended ? this.bestDepartureReason(comparisonCandidate, recommended) : "この時間帯の到着時予報を取得できませんでした。",
+      criterion,
+      reason: recommended ? criterion === "rain" ? this.bestDepartureReason(comparisonCandidate, recommended) : criterion === "heat" ? "到着時の気温が最も低い出発時刻です。" : "到着時の風が最も弱い出発時刻です。" : "この時間帯の到着時予報を取得できませんでした。",
     };
   }
 
   private async travelContext(userId: bigint, fromId: bigint, toId: bigint) {
     if (fromId === toId) throw new TravelInputError("出発地と到着地には別の都市を選択してください。");
 
-    const cities = await this.prisma.city.findMany({ where: { userId, id: { in: [fromId, toId] } } });
+    const cities = await this.prisma.city.findMany({ where: { userId, deletedAt: null, id: { in: [fromId, toId] } } });
     const from = cities.find((city) => city.id === fromId);
     const to = cities.find((city) => city.id === toId);
     if (!from || !to) return null;
     return { from, to };
+  }
+
+  private criterionScore(weather: Awaited<ReturnType<WeatherClient["hourlyWeatherFor"]>>, criterion: "rain" | "heat" | "wind") {
+    if (criterion === "rain") return this.weatherScore(weather?.precipitation_probability ?? null);
+    const value = criterion === "heat" ? weather?.temperature : weather?.wind_speed;
+    if (value === null || value === undefined || !Number.isFinite(value)) return null;
+    // 並び順では丸めや0点の切り捨てによる同点を避けるため、生値を使用します。
+    return 100 - value;
   }
 
   private weatherScore(precipitationProbability: number | null) {

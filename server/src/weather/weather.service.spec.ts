@@ -89,6 +89,10 @@ describe("WeatherService", () => {
     const latest = {
       id: 1n,
       fetchedAt: new Date(Date.now() - 60 * 60_000),
+      forecastSyncFailed: true,
+      airQualitySyncFailed: false,
+      forecastFetchedAt: null,
+      airQualityFetchedAt: expect.any(Date),
       currentTemperature: 19,
       currentHumidity: 45,
       currentPrecipitation: 0,

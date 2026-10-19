@@ -41,6 +41,10 @@ export class WeatherService {
         data: {
           cityId: city.id,
           fetchedAt: new Date(),
+          forecastSyncFailed: !payload.forecast,
+          airQualitySyncFailed: !payload.airQuality,
+          forecastFetchedAt: payload.forecast ? payload.forecastFetchedAt ?? new Date() : latestAfterFetch?.forecastFetchedAt ?? null,
+          airQualityFetchedAt: payload.airQuality ? payload.airQualityFetchedAt ?? new Date() : latestAfterFetch?.airQualityFetchedAt ?? null,
           currentTemperature: forecast ? this.numberValue(forecast.temperature_2m) : latestAfterFetch?.currentTemperature ?? null,
           currentHumidity: forecast ? this.integerValue(forecast.relative_humidity_2m) : latestAfterFetch?.currentHumidity ?? null,
           currentPrecipitation: forecast ? this.numberValue(forecast.precipitation) : latestAfterFetch?.currentPrecipitation ?? null,
@@ -54,6 +58,10 @@ export class WeatherService {
         },
       });
     });
+  }
+
+  async purgeDiscardedCities() {
+    return this.prisma.city.deleteMany({ where: { deletedAt: { lt: new Date(Date.now() - 30000) } } });
   }
 
   async syncAll() {
@@ -76,7 +84,7 @@ export class WeatherService {
         }, WEATHER_SYNC_LOCK_RENEWAL_MS);
         lockRenewal.unref?.();
         try {
-          const cities = await this.prisma.city.findMany();
+          const cities = await this.prisma.city.findMany({ where: { deletedAt: null } });
           await this.syncCitiesWithBoundedConcurrency(cities);
           await this.pruneSnapshots();
           return true;

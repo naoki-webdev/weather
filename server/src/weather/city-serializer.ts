@@ -16,7 +16,11 @@ function latestSnapshot(city: CityWithSnapshots) {
 function serializeWeather(snapshot: WeatherSnapshot | null) {
   if (!snapshot) return null;
   return {
+    forecast_sync_failed: snapshot.forecastSyncFailed,
+    air_quality_sync_failed: snapshot.airQualitySyncFailed,
     fetched_at: snapshot.fetchedAt,
+    forecast_fetched_at: snapshot.forecastFetchedAt,
+    air_quality_fetched_at: snapshot.airQualityFetchedAt,
     current: {
       temperature: numberOrNull(snapshot.currentTemperature),
       humidity: snapshot.currentHumidity,
@@ -51,6 +55,7 @@ export function serializeCity(city: CityWithSnapshots, preference: WeatherPrefer
     favorite: city.favorite,
     score: scoreFor(scorePreference, snapshot),
     score_breakdown: breakdown,
+    score_coverage: { available: Object.keys(weights).filter((key) => weights[key as keyof typeof weights] > 0 && breakdown[key as keyof typeof breakdown] !== null).length, total: Object.values(weights).filter((weight) => weight > 0).length },
     score_weights: weights,
     score_insight: {
       primary_component: primary,

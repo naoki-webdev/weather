@@ -35,6 +35,10 @@ export type WeatherDaily = {
 };
 
 export type WeatherSnapshot = {
+  forecast_sync_failed?: boolean;
+  air_quality_sync_failed?: boolean;
+  forecast_fetched_at?: string | null;
+  air_quality_fetched_at?: string | null;
   fetched_at: string;
   current: WeatherCurrent;
   daily: WeatherDaily;
@@ -70,6 +74,7 @@ export type City = {
   source_name: string;
   favorite: boolean;
   score: number | null;
+  score_coverage?: { available: number; total: number };
   score_breakdown: WeatherScoreBreakdown;
   score_weights: WeatherScoreWeights;
   score_insight: {

@@ -29,7 +29,7 @@ type TravelSectionProps = {
   bestDeparturePlan: BestDeparturePlan | null;
   bestDepartureLoading: boolean;
   bestDepartureError: string | null;
-  onPlanBestDeparture: (windowStart: string, windowEnd: string) => void;
+  onPlanBestDeparture: (windowStart: string, windowEnd: string, criterion?: string) => void;
 };
 
 type TravelMode = "single" | "best";

@@ -91,7 +91,7 @@ export class CitiesQueryService {
     const uniqueIds = [...new Set(ids)];
     if (uniqueIds.length < 2 || uniqueIds.length > 4) throw new CityComparisonInputError("比較する都市を2～4件選択してください。");
 
-    const cities = await this.prisma.city.findMany({ where: { userId, id: { in: uniqueIds } }, include: LATEST_CITY_INCLUDE });
+    const cities = await this.prisma.city.findMany({ where: { userId, deletedAt: null, id: { in: uniqueIds } }, include: LATEST_CITY_INCLUDE });
     if (cities.length !== uniqueIds.length) throw new CityComparisonNotFoundError("比較対象の都市が見つかりません。");
     const citiesWithHistory = await this.withHistory(cities);
 
@@ -162,6 +162,7 @@ export class CitiesQueryService {
 
   private cityWhere(userId: bigint, keyword: string, favoriteOnly: boolean): Prisma.CityWhereInput {
     return {
+      deletedAt: null,
       userId,
       ...(favoriteOnly ? { favorite: true } : {}),
       ...(keyword ? {
@@ -228,7 +229,7 @@ export class CitiesQueryService {
           ORDER BY snapshot."fetched_at" DESC
           LIMIT 1
         ) AS snapshot ON true
-        WHERE city."user_id" = ${userId}
+        WHERE city."user_id" = ${userId} AND city."deleted_at" IS NULL
           ${favoriteOnly ? Prisma.sql`AND city."favorite" = true` : Prisma.empty}
           ${keyword ? Prisma.sql`AND (
             city."name" ILIKE ${keywordPattern}
@@ -329,7 +330,7 @@ export class CitiesQueryService {
           ORDER BY snapshot."fetched_at" DESC
           LIMIT 1
         ) AS snapshot ON true
-        WHERE city."user_id" = ${userId}
+        WHERE city."user_id" = ${userId} AND city."deleted_at" IS NULL
           ${favoriteOnly ? Prisma.sql`AND city."favorite" = true` : Prisma.empty}
           ${keyword ? Prisma.sql`AND (
             city."name" ILIKE ${keywordPattern}
@@ -443,7 +444,7 @@ export class CitiesQueryService {
           ORDER BY snapshot."fetched_at" DESC
           LIMIT 1
         ) AS snapshot ON true
-        WHERE city."user_id" = ${userId}
+        WHERE city."user_id" = ${userId} AND city."deleted_at" IS NULL
           ${favoriteOnly ? Prisma.sql`AND city."favorite" = true` : Prisma.empty}
           ${keyword ? Prisma.sql`AND (
             city."name" ILIKE ${keywordPattern}
@@ -498,7 +499,7 @@ export class CitiesQueryService {
         ORDER BY snapshot."fetched_at" DESC
         LIMIT 1
       ) AS latest ON true
-      WHERE city."user_id" = ${userId}
+      WHERE city."user_id" = ${userId} AND city."deleted_at" IS NULL
         ${favoriteOnly ? Prisma.sql`AND city."favorite" = true` : Prisma.empty}
         ${keyword ? Prisma.sql`AND (
           city."name" ILIKE ${keywordPattern}
@@ -517,7 +518,7 @@ export class CitiesQueryService {
   private async citiesByIds(userId: bigint, ids: bigint[]): Promise<CityWithSnapshots[]> {
     if (ids.length === 0) return [];
 
-    const cities = await this.prisma.city.findMany({ where: { userId, id: { in: ids } }, include: LATEST_CITY_INCLUDE });
+    const cities = await this.prisma.city.findMany({ where: { userId, deletedAt: null, id: { in: ids } }, include: LATEST_CITY_INCLUDE });
     const positions = new Map(ids.map((id, index) => [id.toString(), index]));
     return cities.sort((left, right) => (positions.get(left.id.toString()) ?? 0) - (positions.get(right.id.toString()) ?? 0));
   }

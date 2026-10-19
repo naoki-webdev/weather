@@ -37,7 +37,7 @@ export class CitiesService {
   }
 
   async findOne(userId: bigint, cityId: bigint, includeHistory = false) {
-    let city = await this.prisma.city.findFirst({ where: { id: cityId, userId }, include: LATEST_CITY_INCLUDE });
+    let city = await this.prisma.city.findFirst({ where: { id: cityId, userId, deletedAt: null }, include: LATEST_CITY_INCLUDE });
     if (!city) return null;
     if (includeHistory) city = (await this.citiesQueryService.withHistory([city]))[0];
     return serializeCity(city, await this.weatherPreferenceService.preferenceFor(userId), includeHistory);
@@ -45,6 +45,7 @@ export class CitiesService {
 
   async upsert(userId: bigint, input: CityInput) {
     const data = {
+      deletedAt: null,
       name: input.name,
       country: input.country,
       countryCode: input.country_code,
@@ -79,24 +80,46 @@ export class CitiesService {
   }
 
   async remove(userId: bigint, cityId: bigint) {
-    const city = await this.prisma.city.findFirst({ where: { id: cityId, userId } });
+    const city = await this.prisma.city.findFirst({ where: { id: cityId, userId, deletedAt: null } });
     if (!city) return false;
     await this.prisma.$transaction(async (database) => {
-      await database.city.delete({ where: { id: city.id } });
+      await database.city.update({ where: { id: city.id }, data: { deletedAt: new Date() } });
       await this.logActivity(userId, "city.destroy", "City", city.id, { name: city.name }, database);
     });
     return true;
   }
 
+  async weatherWindows(userId: bigint, cityId: bigint, rain: number, temperature: number, wind: number) {
+    const city = await this.prisma.city.findFirst({ where: { id: cityId, userId, deletedAt: null } });
+    if (!city) return null;
+    const start = new Date();
+    start.setUTCMinutes(0,0,0);
+    start.setUTCHours(start.getUTCHours() + 1);
+    const windows = [];
+    for (let hour = 0; hour < 24; hour++) {
+      const at = new Date(start.getTime() + hour * 3600000);
+      const weather = await this.weatherClient.hourlyWeatherFor(city, at);
+      if (!weather || weather.precipitation_probability === null || weather.temperature === null || weather.wind_speed === null) continue;
+      if (weather.precipitation_probability <= rain && weather.temperature <= temperature && weather.wind_speed <= wind) windows.push({ at: at.toISOString(), ...weather });
+    }
+    return { timezone: city.timezone, windows, period_start: start.toISOString(), period_hours: 24 };
+  }
+
+  async restore(userId: bigint, cityId: bigint) {
+    const restored = await this.prisma.city.updateMany({ where: { id: cityId, userId, deletedAt: { gte: new Date(Date.now() - 30000) } }, data: { deletedAt: null } });
+    if (!restored.count) return null;
+    return this.findOne(userId, cityId, true);
+  }
+
   async sync(userId: bigint, cityId: bigint) {
-    const city = await this.prisma.city.findFirst({ where: { id: cityId, userId } });
+    const city = await this.prisma.city.findFirst({ where: { id: cityId, userId, deletedAt: null } });
     if (!city) return null;
     await this.weatherService.syncCity(city, true);
     return this.findOne(userId, cityId, true);
   }
 
   async favorite(userId: bigint, cityId: bigint, favorite: boolean) {
-    const city = await this.prisma.city.findFirst({ where: { id: cityId, userId }, include: LATEST_CITY_INCLUDE });
+    const city = await this.prisma.city.findFirst({ where: { id: cityId, userId, deletedAt: null }, include: LATEST_CITY_INCLUDE });
     if (!city) return null;
     const updated = await this.prisma.$transaction(async (database) => {
       const updatedCity = await database.city.update({ where: { id: city.id }, data: { favorite }, include: LATEST_CITY_INCLUDE });

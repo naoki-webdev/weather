@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 
+import MenuItem from "@mui/material/MenuItem";
 import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
@@ -27,7 +28,7 @@ type BestDeparturePlannerProps = {
   loading: boolean;
   error: string | null;
   plan: BestDeparturePlan | null;
-  onPlan: (windowStart: string, windowEnd: string) => void;
+  onPlan: (windowStart: string, windowEnd: string, criterion?: string) => void;
   compact?: boolean;
 };
 
@@ -54,6 +55,7 @@ export default function BestDeparturePlanner({ from, to, loading, error, plan, o
   const initialWindow = defaultWindow(from.timezone);
   const [windowStart, setWindowStart] = useState(initialWindow.start);
   const [windowEnd, setWindowEnd] = useState(initialWindow.end);
+  const [criterion, setCriterion] = useState("rain");
   const [candidatesOpen, setCandidatesOpen] = useState(false);
 
   useEffect(() => {
@@ -68,7 +70,7 @@ export default function BestDeparturePlanner({ from, to, loading, error, plan, o
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (windowStart && windowEnd && windowStart < windowEnd) onPlan(windowStart, windowEnd);
+    if (windowStart && windowEnd && windowStart < windowEnd) onPlan(windowStart, windowEnd, ...(criterion !== "rain" ? [criterion] : []));
   };
 
   const content = <Stack spacing={1.5}>
@@ -80,6 +82,7 @@ export default function BestDeparturePlanner({ from, to, loading, error, plan, o
           {!compact && <Typography variant="body2" fontWeight={800}>{from.name} → {to.name}</Typography>}
         </Stack>
         <Stack component="form" direction={{ xs: "column", sm: "row" }} spacing={1.25} alignItems={{ xs: "stretch", sm: "center" }} onSubmit={submit}>
+          <TextField select size="small" label="おすすめの基準" value={criterion} onChange={(e) => setCriterion(e.target.value)} sx={{ minWidth: 145 }}><MenuItem value="rain">雨を避ける</MenuItem><MenuItem value="heat">暑さを避ける</MenuItem><MenuItem value="wind">風を避ける</MenuItem></TextField>
           <TextField
             fullWidth
             size="small"

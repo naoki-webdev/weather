@@ -40,6 +40,7 @@ export class TravelController {
     @Query("window_start") windowStart?: string,
     @Query("window_end") windowEnd?: string,
     @Query("interval_minutes") intervalMinutes?: string,
+    @Query("criterion") criterion?: "rain" | "heat" | "wind",
   ) {
     if (!fromId || !toId || !/^\d+$/.test(fromId) || !/^\d+$/.test(toId) || !windowStart || !windowEnd) {
       throw new HttpException({ errors: ["出発地・到着地・出発可能時間を指定してください。"] }, HttpStatus.BAD_REQUEST);
@@ -47,7 +48,7 @@ export class TravelController {
 
     const parsedInterval = intervalMinutes === undefined ? 15 : Number(intervalMinutes);
     try {
-      const result = await this.travelService.bestDeparture(request.user.id, BigInt(fromId), BigInt(toId), windowStart, windowEnd, parsedInterval);
+      const result = await this.travelService.bestDeparture(request.user.id, BigInt(fromId), BigInt(toId), windowStart, windowEnd, parsedInterval, ...(criterion ? [criterion] as const : []));
       if (!result) throw new HttpException({ errors: ["移動対象の都市が見つかりません。"] }, HttpStatus.NOT_FOUND);
       return result;
     } catch (error) {
