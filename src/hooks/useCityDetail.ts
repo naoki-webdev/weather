@@ -53,7 +53,7 @@ export function useCityDetail({ refreshCities, onCityRemoved, onCityUpdated }: U
   }, []);
 
   useEffect(() => {
-    if (detailId === null) { setDetailOpen(false); return; }
+    if (detailId === null) { detailRequestController.current?.abort(); detailRequestSequence.current += 1; setDetailOpen(false); return; }
     if (selectedCityRef.current?.id !== detailId) void openCity(detailId);
     else setDetailOpen(true);
   }, [detailId, openCity]);
